@@ -91,8 +91,6 @@ The frontend will run at `http://localhost:5173` and connect to the backend at `
 ## Documentation References
 
 * [`doc.txt`](doc.txt): Complete architectural overview, schemas, workflows, and testing guide.
-* [`api.txt`](api.txt): Detailed documentation for all 43 REST API endpoints.
-* [`endpoints.txt`](endpoints.txt): Master quick-reference table for all API routes, HTTP methods, and access roles.
 
 ---
 

@@ -132,3 +132,8 @@ public
 # OS files
 .DS_Store
 Thumbs.db
+
+# Internal notes & audit files
+api.txt
+endpoints.txt
+bug.text
