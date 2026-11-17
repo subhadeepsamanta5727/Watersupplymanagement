@@ -45,14 +45,35 @@ const seedDefaults = async () => {
     // 1. Seed Admin
     const adminExists = await User.findOne({ role: 'admin' });
     if (!adminExists) {
+      const isProduction = process.env.NODE_ENV === 'production';
+      const admin = isProduction
+        ? {
+            name: process.env.ADMIN_NAME,
+            phone: process.env.ADMIN_PHONE,
+            email: process.env.ADMIN_EMAIL,
+            password: process.env.ADMIN_PASSWORD
+          }
+        : {
+            name: 'System Admin',
+            phone: '9999999999',
+            email: 'admin@water.com',
+            password: 'admin123'
+          };
+
+      const missingAdminFields = Object.entries(admin)
+        .filter(([, value]) => !value)
+        .map(([field]) => field);
+      if (missingAdminFields.length > 0) {
+        throw new Error(`Missing initial admin settings: ${missingAdminFields.join(', ')}`);
+      }
+
       await User.create({
-        name: 'System Admin',
-        phone: '9999999999',
-        email: 'admin@water.com',
-        password: 'admin123', // Will be hashed automatically by userSchema pre-save hook
+        ...admin,
         role: 'admin'
       });
-      console.log('Default Admin user seeded: admin@water.com / admin123');
+      console.log(isProduction
+        ? `Initial admin user seeded: ${admin.email}`
+        : 'Default Admin user seeded: admin@water.com / admin123');
     }
 
     // 2. Seed Default Plans
@@ -95,7 +116,7 @@ const seedDefaults = async () => {
 
     // 3. Seed Default Vendor
     const vendorExists = await User.findOne({ role: 'vendor' });
-    if (!vendorExists) {
+    if (process.env.NODE_ENV !== 'production' && !vendorExists) {
       const vendor = await User.create({
         name: 'AquaFlow Water Suppliers',
         phone: '8888888888',
@@ -126,6 +147,7 @@ const seedDefaults = async () => {
     }
   } catch (error) {
     console.error('Error seeding initial data:', error.message);
+    process.exit(1);
   }
 };
 

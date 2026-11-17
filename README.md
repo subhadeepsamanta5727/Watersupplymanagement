@@ -86,6 +86,27 @@ npm run dev
 
 The frontend will run at `http://localhost:5173` and connect to the backend at `http://localhost:5000/api/v1`.
 
+## Deploying on Render
+
+This repository includes a Render Blueprint in [`render.yaml`](render.yaml) that creates an Express API and a static React frontend. Push the repository to GitHub, then in Render choose **New + → Blueprint** and select the repository. Render will prompt for the private values marked as unsynchronized in the Blueprint.
+
+Before deploying, prepare:
+
+* A MongoDB Atlas connection string for a database configured as a replica set (required for order/payment transactions).
+* A strong, unique `JWT_SECRET`.
+* A 64-character hexadecimal `RAZORPAY_SECRET_ENCRYPTION_KEY`, generated with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+* The initial admin's name, phone, email, and a strong password. These are used only when the production database has no admin yet.
+* The frontend's Render URL for `FRONTEND_URL` (the Blueprint's static site is named `water-supply-web`; use its actual URL, typically `https://water-supply-web.onrender.com`).
+
+After the Blueprint creates both services, configure these additional environment variables in the Render dashboard if those features are needed:
+
+* **API service:** `FIREBASE_PROJECT_ID`, `FIREBASE_PRIVATE_KEY_ID`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_CLIENT_X509_CERT_URL` for Firebase phone authentication; SMTP settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_EMAIL`, `SMTP_PASSWORD`, `FROM_NAME`, and `FROM_EMAIL`) for password-reset email.
+* **Static site:** `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, and `VITE_FIREBASE_APP_ID` for Firebase phone authentication.
+
+Use Render's environment-variable dashboard for credentials; do not commit `.env` files or Firebase service-account JSON. The Firebase web configuration is used by the browser, but the Firebase Admin private key must remain secret. Use a fresh production database, or remove/change any existing demo accounts before launch. Production no longer seeds the development demo vendor or fixed default credentials; create a vendor through the business registration page after deployment.
+
+The API is configured on Render's free instance plan, which can spin down after inactivity and make the first request slow. Choose a paid plan in Render if you need an always-on API.
+
 ---
 
 ## Documentation References
