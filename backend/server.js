@@ -9,9 +9,6 @@ const VendorSubscription = require('./models/VendorSubscription');
 // Load environment variables
 dotenv.config();
 
-// Connect to MongoDB
-connectDB();
-
 const app = express();
 
 // Middlewares
@@ -147,15 +144,22 @@ const seedDefaults = async () => {
     }
   } catch (error) {
     console.error('Error seeding initial data:', error.message);
-    process.exit(1);
+    throw error;
   }
 };
 
-// Execute Seeder
-seedDefaults();
-
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+const startServer = async () => {
+  await connectDB();
+  await seedDefaults();
+
+  app.listen(PORT, () => {
+    console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
+  });
+};
+
+startServer().catch((error) => {
+  console.error(`Server startup failed: ${error.message}`);
+  process.exit(1);
 });
