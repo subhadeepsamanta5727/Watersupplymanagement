@@ -1,0 +1,1462 @@
+================================================================================
+WATER SUPPLY MANAGEMENT SYSTEM - COMPLETE API DOCUMENTATION (api.txt)
+================================================================================
+Base URL: /api/v1
+Default Port: 5000 (http://localhost:5000/api/v1)
+Total Endpoints: 43
+
+Authentication Schemes:
+- Public: No authentication required.
+- JWT Bearer Token: Sent in header "Authorization: Bearer <token>" or "?token=<token>" query param.
+- Role Access: Enforced by middleware:
+  - Admin (Platform Administrator)
+  - Vendor (Water Distributor / Supplier)
+  - Agent (Field Delivery Agent / Driver)
+  - Customer (End-consumer ordering water bottles)
+
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+- Master Quick-Reference Table (All 43 Endpoints)
+1. System & Health Check APIs (1 Endpoint)
+2. Authentication & User Management APIs (8 Endpoints)
+3. Platform Administration APIs (9 Endpoints)
+4. Vendor / Distributor Management APIs (15 Endpoints)
+5. Delivery Agent APIs (3 Endpoints)
+6. Customer Portal APIs (5 Endpoints)
+7. Orders, Deliveries & PDF Statements APIs (6 Endpoints)
+8. Payment Gateway & Razorpay APIs (6 Endpoints)
+
+
+================================================================================
+MASTER QUICK-REFERENCE TABLE (ALL 43 ENDPOINTS)
+================================================================================
+
+1. Health & System (1 Endpoint)
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/health              | Public       | Checks backend server status and health.                            |
+
+2. Authentication & Profile (/api/v1/auth - 8 Endpoints)
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| POST   | /api/v1/auth/register-vendor | Public       | Registers a new Vendor and automatically activates 30-day Free Trial.|
+| POST   | /api/v1/auth/login          | Public       | Authenticates Admin or Vendor using email/phone and password.       |
+| POST   | /api/v1/auth/send-otp       | Public       | Placeholder confirming customer phone OTP handled via Firebase SDK. |
+| POST   | /api/v1/auth/verify-otp     | Public       | Verifies Firebase ID Token; returns JWT or prompts registration.    |
+| POST   | /api/v1/auth/register-customer| Public     | Creates new Customer account with name & address after OTP.         |
+| GET    | /api/v1/auth/me             | Authenticated| Fetches profile of currently logged-in user.                        |
+| POST   | /api/v1/auth/forgot-password| Public       | Generates 15-minute reset token and emails password reset link.     |
+| PUT    | /api/v1/auth/reset-password/:token | Public| Resets user password using email reset token.                       |
+
+3. Platform Administration (/api/v1/admin - 9 Endpoints)
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/admin/stats         | Admin        | Fetches platform statistics (vendors, customers, plans, revenue).   |
+| POST   | /api/v1/admin/plans         | Admin        | Creates a new subscription plan (price, duration, user limit).      |
+| GET    | /api/v1/admin/plans         | Admin        | Lists all subscription plans.                                       |
+| DELETE | /api/v1/admin/plans/:id     | Admin        | Deletes a plan (blocked if any vendor actively subscribed).         |
+| GET    | /api/v1/admin/vendors       | Admin        | Lists all vendors with active subscriptions and customer counts.    |
+| PUT    | /api/v1/admin/vendors/:id   | Admin        | Updates vendor info or toggles active/deactivated account status.   |
+| DELETE | /api/v1/admin/vendors/:id   | Admin        | Deletes a single vendor and cascades deletion across their records. |
+| DELETE | /api/v1/admin/vendors       | Admin        | Bulk deletes all vendors and cascade cleans their records.          |
+| POST   | /api/v1/admin/assign-subscription | Admin  | Manually assigns or overrides a subscription plan for a vendor.     |
+
+4. Vendor / Distributor Management (/api/v1/vendor - 15 Endpoints)
+| Method | Endpoint                              | Access Role  | Description                                                         |
+|:-------|:--------------------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/vendor/subscription           | Vendor       | Checks active plan details, expiration date, and capacity limit.    |
+| POST   | /api/v1/vendor/products               | Vendor       | Adds a water product to catalog (name, price, stock, volume).       |
+| GET    | /api/v1/vendor/products               | Vendor/Customer| Retrieves vendor product list (Customer passes ?vendorId=...).     |
+| PUT    | /api/v1/vendor/products/:id           | Vendor       | Updates product details, pricing, stock levels, or active status.   |
+| DELETE | /api/v1/vendor/products/:id           | Vendor       | Deletes a product from the vendor's catalog.                        |
+| POST   | /api/v1/vendor/customers              | Vendor       | Connects customer by phone (creates profile if new; enforces limit).|
+| GET    | /api/v1/vendor/customers              | Vendor       | Lists connected customers with ledger balances and bottle counts.   |
+| PUT    | /api/v1/vendor/customers/:customerId  | Vendor       | Manually adjusts customer balance (Rs) and bottles outstanding.     |
+| PUT    | /api/v1/vendor/profile                | Vendor       | Updates address, delivery slots, password, and Razorpay API keys.   |
+| GET    | /api/v1/vendor/plans                  | Vendor       | Lists all available paid subscription plans for vendor upgrade.     |
+| GET    | /api/v1/vendor/agents                 | Vendor       | Lists vendor's delivery agents with pending cash & jar totals.      |
+| POST   | /api/v1/vendor/agents                 | Vendor       | Registers a new delivery agent under this vendor.                   |
+| POST   | /api/v1/vendor/agents/:agentId/settlements | Vendor   | Submits & records cash settlement collected by an agent (supports optional notes). |
+| POST   | /api/v1/vendor/agents/:agentId/jar-settlements | Vendor | Submits & records returned empty jars collected by an agent (supports optional notes). |
+| PUT    | /api/v1/vendor/orders/:orderId/agent  | Vendor       | Assigns or reassigns a pending order to a delivery agent.           |
+
+5. Delivery Agent APIs (/api/v1/agent - 3 Endpoints)
+| Method | Endpoint                              | Access Role  | Description                                                         |
+|:-------|:--------------------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/agent/dashboard               | Agent        | Agent dashboard: open deliveries, assigned orders, cash & jar stats (?scope=available|mine|unassigned|all).|
+| PUT    | /api/v1/agent/orders/:orderId/claim   | Agent        | Delivery agent claims an unassigned pending order for fulfillment.  |
+| PUT    | /api/v1/agent/orders/:orderId/release | Agent        | Delivery agent releases / unclaims a previously claimed order.      |
+
+6. Customer Portal (/api/v1/customer - 5 Endpoints)
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/customer/vendors    | Customer     | Lists all distributors connected to this customer and balances.     |
+| GET    | /api/v1/customer/vendors/:vendorId | Customer| Gets distributor storefront (products, slots, orders, payments).    |
+| PUT    | /api/v1/customer/profile    | Customer     | Updates profile name, default address, and up to 5 saved addresses. |
+| POST   | /api/v1/customer/change-phone-request | Customer| Sends a 6-digit verification OTP to a new phone number.       |
+| PUT    | /api/v1/customer/change-phone-verify | Customer| Verifies OTP and updates customer's phone number.                   |
+
+7. Orders, Deliveries & Statements (/api/v1/orders - 6 Endpoints)
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| POST   | /api/v1/orders              | Vendor/Customer| Places order (Customer -> pending, auto-connects to vendor; Vendor -> delivered & stock cut).|
+| PUT    | /api/v1/orders/:id/status   | Vendor/Agent | Fulfills order (delivered) or cancels (restocks & reverses cash). Supports deliveryNotes.   |
+| POST   | /api/v1/orders/payments     | Vendor       | Logs offline cash collected from a customer and reduces debt.       |
+| GET    | /api/v1/orders              | Vendor/Customer/Agent| Lists order history (supports filtering by customer, vendor, agent). |
+| GET    | /api/v1/orders/payments     | Vendor/Customer| Lists payment history (supports ?customerId=... or ?vendorId=...).  |
+| GET    | /api/v1/orders/pdf-report   | Vendor       | Generates and streams PDF statement for a customer or general scope.|
+
+8. Payments & Razorpay Gateway (/api/v1/payment - 6 Endpoints)
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/payment/config      | Admin        | Retrieves platform Razorpay Key ID and secret status.               |
+| POST   | /api/v1/payment/config      | Admin        | Saves or updates platform Razorpay Key ID and Secret.               |
+| POST   | /api/v1/payment/create-order| Vendor       | Creates Razorpay order for vendor subscription purchase.            |
+| POST   | /api/v1/payment/verify      | Vendor       | Verifies vendor subscription payment signature and activates plan.  |
+| POST   | /api/v1/payment/customer/create-order | Customer| Creates Razorpay order for customer paying bill to vendor account. |
+| POST   | /api/v1/payment/customer/verify | Customer | Verifies customer payment signature, logs payment, and clears debt. |
+
+
+================================================================================
+1. SYSTEM & HEALTH CHECK APIS
+================================================================================
+
+1.1. Health Check
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/health
+- Access Level: Public
+- Description: Verifies if the backend server is online, operational, and responsive.
+- Request Headers: None
+- Request Body: None
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Water Supply API running successfully"
+  }
+
+
+================================================================================
+2. AUTHENTICATION & USER MANAGEMENT APIS
+================================================================================
+Mounted at: /api/v1/auth
+
+2.1. Register Vendor
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/auth/register-vendor
+- Access Level: Public
+- Description: Registers a new water supplier / distributor company account.
+  Validates that phone is exactly 10 digits and unique.
+  Automatically provisions and assigns a default "Free Trial" subscription
+  (up to 10,000 customers for 30 days) to allow immediate system onboarding.
+- Request Body:
+  {
+    "name": "AquaFlow Water Suppliers",
+    "phone": "9876543210",
+    "email": "vendor@aquaflow.com",
+    "password": "Password123"
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "token": "eyJhbGciOiJIUzI1NiIsIn...",
+    "user": {
+      "id": "6643a1...",
+      "name": "AquaFlow Water Suppliers",
+      "phone": "9876543210",
+      "email": "vendor@aquaflow.com",
+      "role": "vendor"
+    }
+  }
+
+2.2. Login (Admin & Vendor)
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/auth/login
+- Access Level: Public
+- Description: Authenticates an Admin or Vendor using email or phone number and password.
+  Customer and Agent accounts cannot authenticate via this endpoint (they use phone OTP).
+- Request Body:
+  {
+    "email": "admin@water.com",   // Accepts email or 10-digit phone
+    "password": "admin123"
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "token": "eyJhbGciOiJIUzI1NiIsIn...",
+    "user": {
+      "id": "6643b2...",
+      "name": "System Admin",
+      "phone": "9999999999",
+      "email": "admin@water.com",
+      "role": "admin"
+    }
+  }
+
+2.3. Send OTP (Placeholder / Client Info)
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/auth/send-otp
+- Access Level: Public
+- Description: Informational endpoint confirming phone OTP dispatch is handled via
+  the Firebase Client SDK directly on the frontend.
+- Request Body:
+  {
+    "phone": "9876543210"
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "OTP should be sent via Firebase Client SDK"
+  }
+
+2.4. Verify OTP (Customer & Delivery Agent Login)
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/auth/verify-otp
+- Access Level: Public
+- Description: Verifies Firebase ID Token passed from client after phone SMS OTP.
+  Extracts the verified phone number. Checks if user exists:
+  - If existing Customer: returns active JWT auth token and customer profile.
+  - If existing Delivery Agent: returns active JWT token, agent profile, and vendorId.
+  - If new phone number: returns `isNewUser: true` prompting frontend to collect
+    customer Name and Address.
+- Request Body:
+  {
+    "idToken": "FIREBASE_ID_TOKEN_STRING"
+  }
+- Success Response (Customer - 200 OK):
+  {
+    "success": true,
+    "isNewUser": false,
+    "token": "eyJhbGciOiJIUzI1NiIsIn...",
+    "user": {
+      "id": "6643c3...",
+      "name": "Rahul Sharma",
+      "phone": "9876543210",
+      "role": "customer",
+      "address": "Flat 402, Green Valley Apartments",
+      "addresses": ["Flat 402, Green Valley Apartments"]
+    }
+  }
+- Success Response (Delivery Agent - 200 OK):
+  {
+    "success": true,
+    "isNewUser": false,
+    "token": "eyJhbGciOiJIUzI1NiIsIn...",
+    "user": {
+      "id": "6643c9...",
+      "name": "Ramesh Kumar (Driver 1)",
+      "phone": "9876543210",
+      "role": "agent",
+      "vendorId": "6643a1..."
+    }
+  }
+
+2.5. Register Customer (Post-OTP Account Creation)
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/auth/register-customer
+- Access Level: Public
+- Description: Completes registration for a new customer following successful OTP
+  verification. Creates Customer record with initial delivery address.
+- Request Body:
+  {
+    "name": "Rahul Sharma",
+    "idToken": "FIREBASE_ID_TOKEN_STRING",
+    "address": "Flat 402, Green Valley Apartments"
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "token": "eyJhbGciOiJIUzI1NiIsIn...",
+    "user": {
+      "id": "6643c3...",
+      "name": "Rahul Sharma",
+      "phone": "9876543210",
+      "role": "customer",
+      "address": "Flat 402, Green Valley Apartments",
+      "addresses": ["Flat 402, Green Valley Apartments"]
+    }
+  }
+
+2.6. Get Current Authenticated User (Profile)
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/auth/me
+- Access Level: Private (Any logged-in role: Admin, Vendor, Customer, Agent)
+- Description: Returns profile details of the user associated with the passed JWT.
+- Request Headers:
+  Authorization: Bearer <token>
+- Success Response (200 OK):
+  {
+    "success": true,
+    "user": {
+      "_id": "6643a1...",
+      "name": "AquaFlow Water Suppliers",
+      "phone": "9876543210",
+      "email": "vendor@aquaflow.com",
+      "role": "vendor",
+      "address": "12 Industrial Area, Sector 5",
+      "deliverySlots": ["Morning (8 AM - 12 PM)", "Evening (4 PM - 8 PM)"],
+      "isActive": true,
+      "createdAt": "2026-05-10T08:30:00.000Z"
+    }
+  }
+
+2.7. Forgot Password Request
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/auth/forgot-password
+- Access Level: Public
+- Description: Generates a secure random 15-minute password reset token for Admin
+  or Vendor, saves SHA-256 hash to database, and sends a reset link via email.
+- Request Body:
+  {
+    "email": "vendor@aquaflow.com"
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Email sent"
+  }
+
+2.8. Reset Password
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/auth/reset-password/:token
+- Access Level: Public
+- Description: Validates password reset token, checks expiration date, sets new
+  password (automatically hashed by pre-save hook), and returns fresh JWT token.
+- URL Parameters:
+  `token`: Plaintext reset token from the reset URL.
+- Request Body:
+  {
+    "password": "NewSecurePassword456!"
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "token": "eyJhbGciOiJIUzI1NiIsIn...",
+    "message": "Password updated successfully"
+  }
+
+
+================================================================================
+3. PLATFORM ADMINISTRATION APIS
+================================================================================
+Mounted at: /api/v1/admin
+Requires: Authorization: Bearer <token> (Role: 'admin')
+
+3.1. Get System-Wide Statistics
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/admin/stats
+- Access Level: Private (Admin)
+- Description: Returns high-level platform health metrics including total vendors,
+  total customers, total plans, active vendor subscriptions, and calculated revenue.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "vendorsCount": 15,
+      "customersCount": 420,
+      "plansCount": 4,
+      "activeSubsCount": 12,
+      "totalRevenue": 15480
+    }
+  }
+
+3.2. Create Subscription Plan
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/admin/plans
+- Access Level: Private (Admin)
+- Description: Creates a new subscription tier with price, duration, and customer limit.
+- Request Body:
+  {
+    "name": "Quarterly Pro",
+    "price": 1299,
+    "duration": "quarterly",     // "monthly", "quarterly", or "yearly"
+    "userLimit": 150
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "data": {
+      "_id": "6643d4...",
+      "name": "Quarterly Pro",
+      "price": 1299,
+      "duration": "quarterly",
+      "userLimit": 150,
+      "isActive": true
+    }
+  }
+
+3.3. Get All Subscription Plans
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/admin/plans
+- Access Level: Private (Admin)
+- Description: Retrieves all subscription plans stored in the system.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "_id": "6643d4...",
+        "name": "Free Trial",
+        "price": 0,
+        "duration": "monthly",
+        "userLimit": 10000,
+        "isActive": true
+      },
+      {
+        "_id": "6643d5...",
+        "name": "Monthly Starter",
+        "price": 499,
+        "duration": "monthly",
+        "userLimit": 50,
+        "isActive": true
+      }
+    ]
+  }
+
+3.4. Delete Subscription Plan
+--------------------------------------------------------------------------------
+- Method: DELETE
+- Endpoint: /api/v1/admin/plans/:id
+- Access Level: Private (Admin)
+- Description: Deletes a subscription plan. Blocked if vendors are actively subscribed.
+- URL Parameters: `id`: SubscriptionPlan ObjectId
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Subscription plan deleted successfully"
+  }
+
+3.5. Get All Vendors & Subscription Status
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/admin/vendors
+- Access Level: Private (Admin)
+- Description: Returns complete directory of registered water distributors, their active
+  subscription plan, start/end dates, active status, and total customer count.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "_id": "6643a1...",
+        "name": "AquaFlow Water Suppliers",
+        "phone": "9876543210",
+        "email": "vendor@aquaflow.com",
+        "isActive": true,
+        "subscription": {
+          "planName": "Monthly Starter",
+          "userLimit": 50,
+          "startDate": "2026-05-01T00:00:00.000Z",
+          "endDate": "2026-05-31T00:00:00.000Z"
+        },
+        "customerCount": 28
+      }
+    ]
+  }
+
+3.6. Update Vendor Details & Account Status
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/admin/vendors/:id
+- Access Level: Private (Admin)
+- Description: Updates a vendor's business name, phone, email, or toggles `isActive`
+  (activate or deactivate account).
+- URL Parameters: `id`: Vendor User ObjectId
+- Request Body:
+  {
+    "name": "AquaFlow Water Suppliers Ltd",
+    "phone": "9876543210",
+    "email": "contact@aquaflow.com",
+    "isActive": true
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": { ...updated vendor document... }
+  }
+
+3.7. Delete Single Vendor (Cascade Delete)
+--------------------------------------------------------------------------------
+- Method: DELETE
+- Endpoint: /api/v1/admin/vendors/:id
+- Access Level: Private (Admin)
+- Description: Permanently deletes a vendor and cascade deletes their associated
+  orders, products, customer relations, and subscriptions.
+- URL Parameters: `id`: Vendor User ObjectId
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Vendor and all associated records deleted successfully"
+  }
+
+3.8. Delete All Vendors (Bulk Reset)
+--------------------------------------------------------------------------------
+- Method: DELETE
+- Endpoint: /api/v1/admin/vendors
+- Access Level: Private (Admin)
+- Description: Deletes all vendor accounts and cascade wipes all associated orders,
+  products, customer relations, and subscriptions across the system.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "All vendors and associated records deleted successfully"
+  }
+
+3.9. Manually Assign Subscription to Vendor
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/admin/assign-subscription
+- Access Level: Private (Admin)
+- Description: Manually overrides or assigns a plan to a vendor. Deactivates any
+  previous active subscription and sets expiration based on duration.
+- Request Body:
+  {
+    "vendorId": "6643a1...",
+    "planId": "6643d4..."
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Subscription plan successfully assigned",
+    "data": { ...new active subscription record... }
+  }
+
+
+================================================================================
+4. VENDOR / DISTRIBUTOR MANAGEMENT APIS
+================================================================================
+Mounted at: /api/v1/vendor
+Requires: Authorization: Bearer <token> (Role: 'vendor')
+
+4.1. Get Vendor Subscription Status
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/vendor/subscription
+- Access Level: Private (Vendor)
+- Description: Checks current active plan, expiration date, max customer capacity,
+  current connected customer count, and whether capacity is exceeded.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "status": {
+      "active": true,
+      "userLimit": 50,
+      "customerCount": 28,
+      "isLimitExceeded": false,
+      "subscription": { ...plan object and dates... }
+    }
+  }
+
+4.2. Add Product to Catalog
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/vendor/products
+- Access Level: Private (Vendor - Requires Active Subscription)
+- Description: Adds a water bottle product (e.g. 20L Can, 1L Carton) with pricing,
+  inventory stock, and description.
+- Request Body:
+  {
+    "name": "20 Litre Mineral Water Can",
+    "price": 80,
+    "description": "Bisleri purified 20L standard can",
+    "quantity": "20 Litre",
+    "stock": 150,
+    "imageUrl": "https://example.com/can.jpg"
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "data": { ...product document... }
+  }
+
+4.3. Get Vendor Products
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/vendor/products
+- Access Level: Private (Vendor or Customer with `?vendorId=...`)
+- Description: Retrieves products belonging to the vendor. If requested by customer,
+  automatically filters only active items (`isActive: true`).
+- Query Parameters: `vendorId`: Required only when invoked by a Customer.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "count": 3,
+    "data": [
+      {
+        "_id": "6643e1...",
+        "name": "20 Litre Mineral Water Can",
+        "price": 80,
+        "quantity": "20 Litre",
+        "stock": 150,
+        "isActive": true
+      }
+    ]
+  }
+
+4.4. Update Product
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/vendor/products/:id
+- Access Level: Private (Vendor - Requires Active Subscription)
+- Description: Modifies product price, stock level, name, or active/inactive visibility.
+- URL Parameters: `id`: Product ObjectId
+- Request Body:
+  {
+    "name": "20 Litre Mineral Water Can",
+    "price": 85,
+    "stock": 180,
+    "isActive": true
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": { ...updated product document... }
+  }
+
+4.5. Delete Product
+--------------------------------------------------------------------------------
+- Method: DELETE
+- Endpoint: /api/v1/vendor/products/:id
+- Access Level: Private (Vendor - Requires Active Subscription)
+- Description: Deletes a product owned by the authenticated vendor.
+- URL Parameters: `id`: Product ObjectId
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Product deleted"
+  }
+
+4.6. Connect / Add Customer
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/vendor/customers
+- Access Level: Private (Vendor - Requires Active Subscription)
+- Description: Links a customer by phone number. If customer doesn't exist, automatically
+  creates their account with provided name and address. Enforces subscription plan customer limit.
+- Request Body:
+  {
+    "phone": "9876543210",
+    "name": "Suresh Patel",
+    "address": "B-201, Shanti Heights"
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "message": "Customer successfully added and linked",
+    "data": {
+      "relationId": "6643f1...",
+      "customer": {
+        "id": "6643c5...",
+        "name": "Suresh Patel",
+        "phone": "9876543210",
+        "address": "B-201, Shanti Heights"
+      },
+      "bottlesOutstanding": 0,
+      "balance": 0
+    }
+  }
+
+4.7. Get All Connected Customers
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/vendor/customers
+- Access Level: Private (Vendor)
+- Description: Returns all customers connected to this vendor with their ledger balance
+  (positive = customer owes vendor, negative = advance) and outstanding bottle balance.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "count": 1,
+    "data": [
+      {
+        "relationId": "6643f1...",
+        "customerId": "6643c5...",
+        "name": "Suresh Patel",
+        "phone": "9876543210",
+        "address": "B-201, Shanti Heights",
+        "bottlesOutstanding": 2,
+        "balance": 160,
+        "createdAt": "2026-05-12T10:00:00.000Z"
+      }
+    ]
+  }
+
+4.8. Update Customer Ledger Manually
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/vendor/customers/:customerId
+- Access Level: Private (Vendor - Requires Active Subscription)
+- Description: Manually overrides or adjusts a customer's outstanding balance (₹)
+  or outstanding bottle count.
+- URL Parameters: `customerId`: Customer User ObjectId
+- Request Body:
+  {
+    "balance": 240,
+    "bottlesOutstanding": 3
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Customer ledger updated successfully",
+    "data": {
+      "relationId": "6643f1...",
+      "customerId": "6643c5...",
+      "balance": 240,
+      "bottlesOutstanding": 3
+    }
+  }
+
+4.9. Update Vendor Profile & Settings
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/vendor/profile
+- Access Level: Private (Vendor)
+- Description: Updates vendor company details, delivery time slots, password, and
+  Razorpay API keys (Key ID and Secret) used for customer online collections.
+- Request Body:
+  {
+    "name": "AquaFlow Water Suppliers Ltd",
+    "phone": "9876543210",
+    "email": "operations@aquaflow.com",
+    "address": "Warehouse 4, Ring Road",
+    "razorpayKeyId": "rzp_live_abc123",
+    "razorpayKeySecret": "secret_xyz789",
+    "deliverySlots": [
+      "Morning (7 AM - 11 AM)",
+      "Afternoon (1 PM - 4 PM)",
+      "Evening (5 PM - 9 PM)"
+    ]
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Profile settings updated successfully",
+    "user": {
+      "id": "6643a1...",
+      "name": "AquaFlow Water Suppliers Ltd",
+      "phone": "9876543210",
+      "email": "operations@aquaflow.com",
+      "address": "Warehouse 4, Ring Road",
+      "razorpayKeyId": "rzp_live_abc123",
+      "hasRazorpaySecret": true,
+      "deliverySlots": ["Morning (7 AM - 11 AM)", "..."],
+      "role": "vendor"
+    }
+  }
+
+4.10. Get Available Vendor Subscription Plans
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/vendor/plans
+- Access Level: Private (Vendor)
+- Description: Returns all active paid subscription plans available for vendors to purchase.
+  Filters out the Free Trial plan.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": [
+      {
+        "_id": "6643d5...",
+        "name": "Monthly Starter",
+        "price": 499,
+        "duration": "monthly",
+        "userLimit": 50
+      },
+      {
+        "_id": "6643d6...",
+        "name": "Quarterly Pro",
+        "price": 1299,
+        "duration": "quarterly",
+        "userLimit": 150
+      }
+    ]
+  }
+
+4.11. Get Vendor's Delivery Agents
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/vendor/agents
+- Access Level: Private (Vendor)
+- Description: Returns all delivery agents employed by the vendor with live shift metrics:
+  cash collected today, empty jars collected today, pending cash in hand awaiting settlement,
+  pending empty jars awaiting settlement, and last settlement timestamp.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "count": 2,
+    "data": [
+      {
+        "_id": "6643a9...",
+        "name": "Ramesh Kumar (Driver 1)",
+        "phone": "9876543210",
+        "isActive": true,
+        "createdAt": "2026-05-15T08:00:00.000Z",
+        "todayCash": 1600,
+        "jarsCollectedToday": 20,
+        "pendingCash": 3200,
+        "pendingJars": 40,
+        "lastSubmittedAt": "2026-05-14T18:30:00.000Z",
+        "lastSubmittedAmount": 2800
+      }
+    ]
+  }
+
+4.12. Create Delivery Agent
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/vendor/agents
+- Access Level: Private (Vendor - Requires Active Subscription)
+- Description: Registers a new delivery agent account under this vendor.
+  Validates 10-digit phone number and phone uniqueness.
+- Request Body:
+  {
+    "name": "Ramesh Kumar",
+    "phone": "9876543210"
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "data": {
+      "id": "6643a9...",
+      "name": "Ramesh Kumar",
+      "phone": "9876543210",
+      "isActive": true,
+      "createdAt": "2026-05-15T08:00:00.000Z"
+    }
+  }
+
+4.13. Submit Agent Cash Settlement (Evening Cash Handover)
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/vendor/agents/:agentId/settlements
+- Access Level: Private (Vendor)
+- Description: Submits and settles physical cash handed over by a delivery agent at shift end.
+  Uses a MongoDB transaction to calculate all un-settled cash payments collected by the agent,
+  creates an AgentSettlement record, and links all payment records to the settlement.
+- URL Parameters:
+  `agentId`: Delivery Agent User ObjectId
+- Request Body (JSON, Optional):
+  {
+    "notes": "Verified cash in register; ₹200 diesel deduction approved."
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "data": {
+      "_id": "6644d1...",
+      "vendorId": "6643a1...",
+      "agentId": "6643a9...",
+      "amount": 3200,
+      "notes": "Verified cash in register; ₹200 diesel deduction approved.",
+      "paymentIds": ["6644a1...", "6644a2..."],
+      "submittedAt": "2026-05-15T19:00:00.000Z"
+    }
+  }
+
+4.14. Submit Agent Jar Settlement (Evening Jar Handover)
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/vendor/agents/:agentId/jar-settlements
+- Access Level: Private (Vendor)
+- Description: Submits and settles returned empty water jars physically delivered back to
+  the warehouse by an agent. Uses a MongoDB transaction to aggregate all un-settled
+  returned jars from delivered orders and creates an AgentJarSettlement record.
+- URL Parameters:
+  `agentId`: Delivery Agent User ObjectId
+- Request Body (JSON, Optional):
+  {
+    "notes": "2 jars broken in transit."
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "data": {
+      "_id": "6644e2...",
+      "vendorId": "6643a1...",
+      "agentId": "6643a9...",
+      "bottlesReturned": 40,
+      "orderIds": ["6643f9...", "6643fa..."],
+      "submittedAt": "2026-05-15T19:00:00.000Z"
+    }
+  }
+
+4.15. Assign Delivery Agent to Order
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/vendor/orders/:orderId/agent
+- Access Level: Private (Vendor - Requires Active Subscription)
+- Description: Manually assigns or reassigns an open pending delivery order to a specific
+  delivery agent employed by the vendor. Pass `agentId: null` to unassign.
+- URL Parameters:
+  `orderId`: Order ObjectId
+- Request Body:
+  {
+    "agentId": "6643a9..."      // or null to unassign
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "orderId": "6643f9...",
+      "deliveryAgentId": "6643a9..."
+    }
+  }
+
+
+================================================================================
+5. DELIVERY AGENT APIS
+================================================================================
+Mounted at: /api/v1/agent
+Requires: Authorization: Bearer <token> (Role: 'agent')
+
+5.1. Delivery Agent Dashboard
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/agent/dashboard
+- Access Level: Private (Agent)
+- Description: Returns delivery agent's workspace: open/pending orders for their vendor,
+  identifying orders claimed by this agent vs. unassigned vs. claimed by peers (redacted),
+  today's deliveries completed, empty jars collected today, pending cash in hand, and
+  recent settlement history. Supports pagination via ?page=...&limit=...
+- Query Parameters:
+  `scope`: Filter orders by scope: 'available' (unassigned + claimed by me, avoids peer starvation), 'mine' (claimed by me only), 'unassigned' (unclaimed pool only), or 'all' (default).
+  `page`: Optional page number (e.g. 1).
+  `limit`: Optional items per page (e.g. 20).
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "vendor": {
+        "name": "AquaFlow Water Suppliers"
+      },
+      "orders": [
+        {
+          "_id": "6643f9...",
+          "customerId": {
+            "name": "Rahul Sharma",
+            "phone": "9876543210",
+            "address": "Flat 402, Green Valley Apartments",
+            "bottlesOutstanding": 2
+          },
+          "products": [
+            { "name": "20 Litre Mineral Water Can", "quantity": 2, "price": 80 }
+          ],
+          "totalAmount": 160,
+          "deliverySlot": "Morning (8 AM - 12 PM)",
+          "deliveryAddress": "Flat 402, Green Valley Apartments",
+          "deliveryAgentId": { "_id": "6643a9...", "name": "Ramesh Kumar" },
+          "status": "pending"
+        }
+      ],
+      "stats": {
+        "openDeliveries": 12,
+        "assignedToMe": 4,
+        "completedToday": 8,
+        "jarsCollectedToday": 10,
+        "todayCash": 640,
+        "pendingCash": 1280
+      },
+      "settlements": [
+        { "_id": "6644d1...", "amount": 2800, "submittedAt": "2026-05-14T18:30:00.000Z" }
+      ]
+    }
+  }
+
+5.2. Claim Open Delivery Order
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/agent/orders/:orderId/claim
+- Access Level: Private (Agent)
+- Description: Delivery agent self-claims an unassigned pending order to add it to their
+  active delivery route. Uses atomic conditional lock (`deliveryAgentId: null`) to prevent
+  race conditions if two drivers claim simultaneously.
+- URL Parameters:
+  `orderId`: Order ObjectId
+- Request Body: None
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "_id": "6643f9...",
+      "deliveryAgentId": {
+        "_id": "6643a9...",
+        "name": "Ramesh Kumar"
+      },
+      "status": "pending"
+    }
+  }
+
+5.3. Release / Unclaim Delivery Order
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/agent/orders/:orderId/release
+- Access Level: Private (Agent)
+- Description: Releases a pending delivery previously claimed by the agent, returning it
+  to the unassigned open pool so another driver can fulfill it.
+- URL Parameters:
+  `orderId`: Order ObjectId
+- Request Body: None
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "_id": "6643f9...",
+      "deliveryAgentId": null,
+      "status": "pending"
+    }
+  }
+
+
+================================================================================
+6. CUSTOMER PORTAL APIS
+================================================================================
+Mounted at: /api/v1/customer
+Requires: Authorization: Bearer <token> (Role: 'customer')
+
+6.1. Get Connected Vendors
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/customer/vendors
+- Access Level: Private (Customer)
+- Description: Returns a list of all water suppliers / vendors connected to the customer,
+  along with total bottles outstanding and ledger balance owed to each.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "count": 1,
+    "data": [
+      {
+        "relationId": "6643f1...",
+        "vendorId": "6643a1...",
+        "name": "AquaFlow Water Suppliers",
+        "phone": "9876543210",
+        "email": "vendor@aquaflow.com",
+        "bottlesOutstanding": 2,
+        "balance": 160
+      }
+    ]
+  }
+
+6.2. Get Vendor Details & Storefront
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/customer/vendors/:vendorId
+- Access Level: Private (Customer)
+- Description: Fetches full storefront data for a connected vendor: active products catalog,
+  available delivery slots, Razorpay Key ID (if online payments enabled), customer order history,
+  and payment records.
+- URL Parameters: `vendorId`: Vendor User ObjectId
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "vendor": {
+        "id": "6643a1...",
+        "name": "AquaFlow Water Suppliers",
+        "phone": "9876543210",
+        "email": "vendor@aquaflow.com",
+        "razorpayKeyId": "rzp_test_123",
+        "deliverySlots": ["Morning (8 AM - 12 PM)", "Evening (4 PM - 8 PM)"]
+      },
+      "bottlesOutstanding": 2,
+      "balance": 160,
+      "products": [ ...active products... ],
+      "orders": [ ...past customer orders... ],
+      "payments": [ ...past customer payments... ]
+    }
+  }
+
+6.3. Update Customer Profile & Saved Addresses
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/customer/profile
+- Access Level: Private (Customer)
+- Description: Updates customer profile, default delivery address, and manages up to 5
+  saved delivery addresses.
+- Request Body:
+  {
+    "name": "Rahul Sharma",
+    "address": "Flat 402, Green Valley Apartments",
+    "addresses": [
+      "Flat 402, Green Valley Apartments",
+      "Office 12B, Tech Park, Sector 4"
+    ]
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Profile settings updated successfully",
+    "user": { ...updated customer document... }
+  }
+
+6.4. Request Phone Number Change
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/customer/change-phone-request
+- Access Level: Private (Customer)
+- Description: Validates that the new phone number is 10 digits and not registered to
+  another user, generates a 6-digit OTP (stored in Otp collection with 5-minute TTL),
+  and dispatches the verification code.
+- Request Body:
+  {
+    "newPhone": "9123456789"
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "OTP sent successfully to the new phone number"
+  }
+
+6.5. Verify Phone Number Change
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/customer/change-phone-verify
+- Access Level: Private (Customer)
+- Description: Verifies the OTP sent to the new phone number, deletes the OTP record,
+  and updates the customer's phone number.
+- Request Body:
+  {
+    "newPhone": "9123456789",
+    "otp": "456789"
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Phone number updated successfully",
+    "user": { ...customer profile with new phone... }
+  }
+
+
+================================================================================
+7. ORDERS, DELIVERIES & PDF STATEMENTS APIS
+================================================================================
+Mounted at: /api/v1/orders
+Requires: Authorization: Bearer <token>
+
+7.1. Create Order / Log Delivery
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/orders
+- Access Level: Private (Vendor or Customer)
+- Description:
+  - When placed by Customer: Creates order in `pending` status with chosen delivery
+    slot, delivery address, and requested items. If customer is ordering from this vendor
+    for the first time, automatically establishes the VendorCustomer connection if the vendor
+    has an active subscription with available capacity limit.
+  - When logged by Vendor: Creates order in `delivered` status, checks stock availability,
+    deducts product stock, increments customer ledger balance, and updates outstanding
+    bottles (`bottlesDelivered - bottlesReturned`).
+- Request Body:
+  {
+    "customerId": "6643c5...",
+    "vendorId": "6643a1...",         // Required if called by Customer
+    "products": [
+      {
+        "productId": "6643e1...",
+        "quantity": 2
+      }
+    ],
+    "bottlesDelivered": 2,          // Used by Vendor
+    "bottlesReturned": 1,           // Used by Vendor
+    "status": "delivered",          // "delivered" (vendor) or "pending" (customer)
+    "deliverySlot": "Morning (8 AM - 12 PM)",
+    "deliveryAddress": "Flat 402, Green Valley Apartments",
+    "saveToProfile": false
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "data": {
+      "_id": "6643f9...",
+      "vendorId": "6643a1...",
+      "customerId": "6643c5...",
+      "products": [
+        {
+          "productId": "6643e1...",
+          "name": "20 Litre Mineral Water Can",
+          "quantity": 2,
+          "price": 80
+        }
+      ],
+      "totalAmount": 160,
+      "bottlesDelivered": 2,
+      "bottlesReturned": 1,
+      "status": "delivered",
+      "deliverySlot": "Morning (8 AM - 12 PM)",
+      "deliveryAddress": "Flat 402, Green Valley Apartments",
+      "deliveryDate": "2026-05-14T09:30:00.000Z",
+      "createdAt": "2026-05-14T09:30:00.000Z"
+    }
+  }
+
+7.2. Update Order Status (Fulfill Pending Request)
+--------------------------------------------------------------------------------
+- Method: PUT
+- Endpoint: /api/v1/orders/:id/status
+- Access Level: Private (Vendor or Agent - Requires Active Vendor Subscription)
+- Description: Processes a customer's pending delivery request or cancels an order.
+  Authorized for both Vendor and assigned Delivery Agent.
+  - When updated to `delivered`: verifies inventory stock, deducts product stock,
+    adds total amount to customer debt, records bottles delivered and returned,
+    and optionally logs cash collection on delivery (tracking `collectedByAgentId` when agent fulfills).
+  - When updated to `cancelled` (from `delivered`): automatically restocks product inventory,
+    reverses customer ledger balance, marks linked payments as `cancelled` (removing phantom debt from
+    the agent's shift collection), and resets unsettled empty jar records.
+- URL Parameters: `id`: Order ObjectId
+- Request Body (JSON):
+  {
+    "status": "delivered",          // "delivered" or "cancelled"
+    "bottlesDelivered": 2,
+    "bottlesReturned": 1,
+    "cashCollected": 160,           // Used by Agent (capped at delivery charge & customer due balance)
+    "paymentMethod": "cash",        // Optional for Vendor: "cash" or "due"
+    "paymentAmount": 160,           // Optional for Vendor
+    "deliveryNotes": "Left at front door" // Optional notes / remarks
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": { ...updated order document... }
+  }
+
+7.3. Record Offline / Cash Payment
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/orders/payments
+- Access Level: Private (Vendor - Requires Active Subscription)
+- Description: Records an offline, cash, or direct payment collected from a customer
+  and immediately deducts the amount from their ledger balance.
+- Request Body:
+  {
+    "customerId": "6643c5...",
+    "amount": 200,
+    "paymentMethod": "cash",        // "cash", "online", or "other"
+    "notes": "Collected cash at doorstep"
+  }
+- Success Response (201 Created):
+  {
+    "success": true,
+    "data": {
+      "_id": "6644a1...",
+      "vendorId": "6643a1...",
+      "customerId": "6643c5...",
+      "amount": 200,
+      "paymentMethod": "cash",
+      "paymentDate": "2026-05-14T10:00:00.000Z",
+      "notes": "Collected cash at doorstep"
+    }
+  }
+
+7.4. Get Orders List
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/orders
+- Access Level: Private (Vendor, Customer, or Agent)
+- Description: Retrieves order logs sorted by creation date descending.
+  - Vendors see all customer orders (or can filter by `?customerId=...`).
+  - Customers see their own orders (or can filter by `?vendorId=...`).
+  - Agents see orders for their assigned vendor.
+- Query Parameters:
+  `customerId`: Optional customer filter (for Vendors).
+  `vendorId`: Optional vendor filter (for Customers).
+- Success Response (200 OK):
+  {
+    "success": true,
+    "count": 15,
+    "data": [ ...array of orders with populated user names & phones... ]
+  }
+
+7.5. Get Payments List
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/orders/payments
+- Access Level: Private (Vendor or Customer)
+- Description: Retrieves historical payment transaction records sorted by date descending.
+- Query Parameters:
+  `customerId`: Optional customer filter (for Vendors).
+  `vendorId`: Optional vendor filter (for Customers).
+- Success Response (200 OK):
+  {
+    "success": true,
+    "count": 8,
+    "data": [ ...array of payments with populated customer details... ]
+  }
+
+7.6. Export Statement & Audit PDF Report
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/orders/pdf-report
+- Access Level: Private (Vendor)
+- Description: Dynamically generates and streams a formatted PDF report containing
+  vendor account details, customer ledger balances, outstanding bottles, delivery logs,
+  and payment receipts. Can generate a statement for a single customer or general vendor scope.
+- Query Parameters:
+  `customerId`: Optional. If supplied, generates customer statement; otherwise vendor overview.
+  `token`: Optional. Used when opening export in a new browser tab (`window.open`).
+- Response Headers:
+  Content-Type: application/pdf
+  Content-Disposition: attachment; filename=water_report_<customerId|general>.pdf
+- Response Body: Binary PDF stream
+
+
+================================================================================
+8. PAYMENT GATEWAY & RAZORPAY APIS
+================================================================================
+Mounted at: /api/v1/payment
+Requires: Authorization: Bearer <token>
+
+8.1. Get Platform Razorpay Configuration
+--------------------------------------------------------------------------------
+- Method: GET
+- Endpoint: /api/v1/payment/config
+- Access Level: Private (Admin)
+- Description: Returns platform Razorpay Key ID and a boolean indicator if a Key Secret
+  is stored. Does not expose the secret key in the response.
+- Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "keyId": "rzp_live_abc123",
+      "hasSecret": true
+    }
+  }
+
+8.2. Save / Update Platform Razorpay Configuration
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/payment/config
+- Access Level: Private (Admin)
+- Description: Saves or updates the system Razorpay Key ID and Key Secret used to charge
+  vendors for subscription plans.
+- Request Body:
+  {
+    "keyId": "rzp_live_abc123",
+    "keySecret": "rzp_live_secret_456"
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Payment settings saved successfully",
+    "data": {
+      "keyId": "rzp_live_abc123",
+      "hasSecret": true
+    }
+  }
+
+8.3. Create Vendor Subscription Razorpay Order
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/payment/create-order
+- Access Level: Private (Vendor)
+- Description: Initializes a Razorpay order in paisa for a vendor upgrading to a paid
+  subscription plan using platform Razorpay gateway credentials.
+- Request Body:
+  {
+    "planId": "6643d5..."
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "orderId": "order_EKf3Ow6BFgahSd",
+    "amount": 49900,
+    "currency": "INR",
+    "keyId": "rzp_live_abc123"
+  }
+
+8.4. Verify Vendor Subscription Razorpay Payment
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/payment/verify
+- Access Level: Private (Vendor)
+- Description: Verifies the Razorpay HMAC SHA256 cryptographic signature. Upon verification,
+  deactivates old subscriptions for this vendor and activates the new subscription plan
+  with appropriate start and end dates.
+- Request Body:
+  {
+    "planId": "6643d5...",
+    "razorpay_payment_id": "pay_29QQoUBi66xm2f",
+    "razorpay_order_id": "order_EKf3Ow6BFgahSd",
+    "razorpay_signature": "9ef4b6fa45b3e667..."
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Payment verified and plan activated successfully!",
+    "data": {
+      "_id": "6644b2...",
+      "vendorId": "6643a1...",
+      "planId": "6643d5...",
+      "startDate": "2026-05-14T10:30:00.000Z",
+      "endDate": "2026-06-13T10:30:00.000Z",
+      "isActive": true
+    }
+  }
+
+8.5. Create Customer-to-Vendor Online Payment Order
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/payment/customer/create-order
+- Access Level: Private (Customer)
+- Description: Creates a Razorpay checkout order for a customer paying their outstanding
+  bill directly into the vendor's connected Razorpay merchant account.
+- Request Body:
+  {
+    "vendorId": "6643a1...",
+    "amount": 320
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "orderId": "order_NC8a609d8H7d9k",
+    "amount": 32000,
+    "currency": "INR",
+    "keyId": "rzp_live_vendor_key_789"
+  }
+
+8.6. Verify Customer-to-Vendor Online Payment
+--------------------------------------------------------------------------------
+- Method: POST
+- Endpoint: /api/v1/payment/customer/verify
+- Access Level: Private (Customer)
+- Description: Verifies the payment signature using the vendor's Razorpay key secret.
+  Records an online payment transaction in the Payment collection and deducts the amount
+  from the customer's ledger balance with the vendor.
+- Request Body:
+  {
+    "vendorId": "6643a1...",
+    "amount": 320,
+    "razorpay_payment_id": "pay_987ABC123XYZ",
+    "razorpay_order_id": "order_NC8a609d8H7d9k",
+    "razorpay_signature": "38a1c97ef..."
+  }
+- Success Response (200 OK):
+  {
+    "success": true,
+    "message": "Payment verified and outstanding balance updated!",
+    "data": {
+      "_id": "6644c5...",
+      "vendorId": "6643a1...",
+      "customerId": "6643c5...",
+      "amount": 320,
+      "paymentMethod": "online",
+      "paymentDate": "2026-05-14T11:00:00.000Z",
+      "notes": "Razorpay Payment ID: pay_987ABC123XYZ"
+    }
+  }
+
+================================================================================
+END OF API DOCUMENTATION
+================================================================================

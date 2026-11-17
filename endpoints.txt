@@ -1,0 +1,107 @@
+================================================================================
+WATER SUPPLY MANAGEMENT SYSTEM - MASTER ENDPOINTS DIRECTORY
+================================================================================
+Base URL: /api/v1
+Total Endpoints: 43
+
+--------------------------------------------------------------------------------
+1. HEALTH & SYSTEM (1 Endpoint)
+--------------------------------------------------------------------------------
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/health              | Public       | Checks backend server status and health.                            |
+
+--------------------------------------------------------------------------------
+2. AUTHENTICATION & PROFILE (/api/v1/auth - 8 Endpoints)
+--------------------------------------------------------------------------------
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| POST   | /api/v1/auth/register-vendor | Public       | Registers a new Vendor and automatically activates 30-day Free Trial.|
+| POST   | /api/v1/auth/login          | Public       | Authenticates Admin or Vendor using email/phone and password.       |
+| POST   | /api/v1/auth/send-otp       | Public       | Placeholder confirming customer phone OTP handled via Firebase SDK. |
+| POST   | /api/v1/auth/verify-otp     | Public       | Verifies Firebase ID Token; returns JWT or prompts registration.    |
+| POST   | /api/v1/auth/register-customer| Public     | Creates new Customer account with name & address after OTP.         |
+| GET    | /api/v1/auth/me             | Authenticated| Fetches profile of currently logged-in user.                        |
+| POST   | /api/v1/auth/forgot-password| Public       | Generates 15-minute reset token and emails password reset link.     |
+| PUT    | /api/v1/auth/reset-password/:token | Public| Resets user password using email reset token.                       |
+
+--------------------------------------------------------------------------------
+3. PLATFORM ADMINISTRATION (/api/v1/admin - 9 Endpoints)
+--------------------------------------------------------------------------------
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/admin/stats         | Admin        | Fetches platform statistics (vendors, customers, plans, revenue).   |
+| POST   | /api/v1/admin/plans         | Admin        | Creates a new subscription plan (price, duration, user limit).      |
+| GET    | /api/v1/admin/plans         | Admin        | Lists all subscription plans.                                       |
+| DELETE | /api/v1/admin/plans/:id     | Admin        | Deletes a plan (blocked if any vendor actively subscribed).         |
+| GET    | /api/v1/admin/vendors       | Admin        | Lists all vendors with active subscriptions and customer counts.    |
+| PUT    | /api/v1/admin/vendors/:id   | Admin        | Updates vendor info or toggles active/deactivated account status.   |
+| DELETE | /api/v1/admin/vendors/:id   | Admin        | Deletes a single vendor and cascades deletion across their records. |
+| DELETE | /api/v1/admin/vendors       | Admin        | Bulk deletes all vendors and cascade cleans their records.          |
+| POST   | /api/v1/admin/assign-subscription | Admin  | Manually assigns or overrides a subscription plan for a vendor.     |
+
+--------------------------------------------------------------------------------
+4. VENDOR / DISTRIBUTOR MANAGEMENT (/api/v1/vendor - 15 Endpoints)
+--------------------------------------------------------------------------------
+| Method | Endpoint                              | Access Role  | Description                                                         |
+|:-------|:--------------------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/vendor/subscription           | Vendor       | Checks active plan details, expiration date, and capacity limit.    |
+| POST   | /api/v1/vendor/products               | Vendor       | Adds a water product to catalog (name, price, stock, volume).       |
+| GET    | /api/v1/vendor/products               | Vendor/Customer| Retrieves vendor product list (Customer passes ?vendorId=...).     |
+| PUT    | /api/v1/vendor/products/:id           | Vendor       | Updates product details, pricing, stock levels, or active status.   |
+| DELETE | /api/v1/vendor/products/:id           | Vendor       | Deletes a product from the vendor's catalog.                        |
+| POST   | /api/v1/vendor/customers              | Vendor       | Connects customer by phone (creates profile if new; enforces limit).|
+| GET    | /api/v1/vendor/customers              | Vendor       | Lists connected customers with ledger balances and bottle counts.   |
+| PUT    | /api/v1/vendor/customers/:customerId  | Vendor       | Manually adjusts customer balance (Rs) and bottles outstanding.     |
+| PUT    | /api/v1/vendor/profile                | Vendor       | Updates address, delivery slots, password, and Razorpay API keys.   |
+| GET    | /api/v1/vendor/plans                  | Vendor       | Lists all available paid subscription plans for vendor upgrade.     |
+| GET    | /api/v1/vendor/agents                 | Vendor       | Lists vendor's delivery agents with pending cash & jar totals.      |
+| POST   | /api/v1/vendor/agents                 | Vendor       | Registers a new delivery agent under this vendor.                   |
+| POST   | /api/v1/vendor/agents/:agentId/settlements | Vendor   | Submits & records cash settlement collected by an agent (supports optional notes). |
+| POST   | /api/v1/vendor/agents/:agentId/jar-settlements | Vendor | Submits & records returned empty jars collected by an agent (supports optional notes). |
+| PUT    | /api/v1/vendor/orders/:orderId/agent  | Vendor       | Assigns or reassigns a pending order to a delivery agent.           |
+
+--------------------------------------------------------------------------------
+5. DELIVERY AGENT APIS (/api/v1/agent - 3 Endpoints)
+--------------------------------------------------------------------------------
+| Method | Endpoint                              | Access Role  | Description                                                         |
+|:-------|:--------------------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/agent/dashboard               | Agent        | Agent dashboard: open deliveries, assigned orders, cash & jar stats (?scope=available|mine|unassigned|all).|
+| PUT    | /api/v1/agent/orders/:orderId/claim   | Agent        | Delivery agent claims an unassigned pending order for fulfillment.  |
+| PUT    | /api/v1/agent/orders/:orderId/release | Agent        | Delivery agent releases / unclaims a previously claimed order.      |
+
+--------------------------------------------------------------------------------
+6. CUSTOMER PORTAL (/api/v1/customer - 5 Endpoints)
+--------------------------------------------------------------------------------
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/customer/vendors    | Customer     | Lists all distributors connected to this customer and balances.     |
+| GET    | /api/v1/customer/vendors/:vendorId | Customer| Gets distributor storefront (products, slots, orders, payments).    |
+| PUT    | /api/v1/customer/profile    | Customer     | Updates profile name, default address, and up to 5 saved addresses. |
+| POST   | /api/v1/customer/change-phone-request | Customer| Sends a 6-digit verification OTP to a new phone number.       |
+| PUT    | /api/v1/customer/change-phone-verify | Customer| Verifies OTP and updates customer's phone number.                   |
+
+--------------------------------------------------------------------------------
+7. ORDERS, DELIVERIES & STATEMENTS (/api/v1/orders - 6 Endpoints)
+--------------------------------------------------------------------------------
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| POST   | /api/v1/orders              | Vendor/Customer| Places order (Customer -> pending, auto-connects to vendor; Vendor -> delivered & stock cut).|
+| PUT    | /api/v1/orders/:id/status   | Vendor/Agent | Fulfills order (delivered) or cancels (restocks & reverses cash). Supports deliveryNotes.   |
+| POST   | /api/v1/orders/payments     | Vendor       | Logs offline cash collected from a customer and reduces debt.       |
+| GET    | /api/v1/orders              | Vendor/Customer/Agent| Lists order history (supports filtering by customer, vendor, agent). |
+| GET    | /api/v1/orders/payments     | Vendor/Customer| Lists payment history (supports ?customerId=... or ?vendorId=...).  |
+| GET    | /api/v1/orders/pdf-report   | Vendor       | Generates and streams PDF statement for a customer or general scope.|
+
+--------------------------------------------------------------------------------
+8. PAYMENTS & RAZORPAY GATEWAY (/api/v1/payment - 6 Endpoints)
+--------------------------------------------------------------------------------
+| Method | Endpoint                    | Access Role  | Description                                                         |
+|:-------|:----------------------------|:-------------|:--------------------------------------------------------------------|
+| GET    | /api/v1/payment/config      | Admin        | Retrieves platform Razorpay Key ID and secret status.               |
+| POST   | /api/v1/payment/config      | Admin        | Saves or updates platform Razorpay Key ID and Secret.               |
+| POST   | /api/v1/payment/create-order| Vendor       | Creates Razorpay order for vendor subscription purchase.            |
+| POST   | /api/v1/payment/verify      | Vendor       | Verifies vendor subscription payment signature and activates plan.  |
+| POST   | /api/v1/payment/customer/create-order | Customer| Creates Razorpay order for customer paying bill to vendor account. |
+| POST   | /api/v1/payment/customer/verify | Customer | Verifies customer payment signature, logs payment, and clears debt. |
+================================================================================

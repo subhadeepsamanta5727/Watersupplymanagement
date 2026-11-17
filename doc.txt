@@ -1,0 +1,710 @@
+================================================================================
+WATER SUPPLY MANAGEMENT SYSTEM - DEVELOPER DOCUMENTATION (doc.txt)
+================================================================================
+Version: 2.0.0
+Architecture: Full-Stack MERN (Node.js / Express / MongoDB / React 19 / Vite)
+Target Audience: Software Engineers, Full-Stack Developers, DevOps, System Architects
+Last Updated: November 2026
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+1. System Overview & Technology Stack
+2. Project Directory Structure
+3. Environment Configuration & Setup Guide
+4. Database Architecture & Data Models (Mongoose)
+5. Core Business Workflows & State Machines
+6. Complete REST API Reference (43 Endpoints)
+7. Security, Cryptography & Data Integrity
+8. Frontend Architecture & Client-Side Design
+9. Automated Testing & Verification Suite
+10. Deployment, Production Checklist & Troubleshooting
+
+
+================================================================================
+1. SYSTEM OVERVIEW & TECHNOLOGY STACK
+================================================================================
+
+1.1. Executive Summary
+--------------------------------------------------------------------------------
+The Water Supply Management System is a commercial SaaS and logistics platform
+engineered for packaged water distributors (20-litre cans, cartons, dispensers).
+It solves core industry pain points:
+- Recurring delivery scheduling and delivery-slot management.
+- Double-ledger accounting: Outstanding monetary balance (INR) AND outstanding
+  physical assets (reusable polycarbonate water jars).
+- Multi-tier SaaS subscriptions for water distributors with customer limits.
+- Field operations: Real-time run-sheets for delivery drivers, self-claiming
+  routes, in-field cash collection, and end-of-day warehouse reconciliations.
+- Direct-to-distributor online payments via Razorpay integration.
+
+1.2. Technology Stack
+--------------------------------------------------------------------------------
+BACKEND:
+- Runtime: Node.js (v18+ recommended, v24 supported)
+- Web Framework: Express.js (v4.19+)
+- Database: MongoDB (v5.0+ or v6.0+ with Replica Set for ACID transactions)
+- ODM: Mongoose (v8.4+)
+- Authentication: JSON Web Tokens (jsonwebtoken v9.0), bcryptjs (v2.4)
+- Phone Verification: Firebase Admin SDK (v14.0)
+- Payment Gateway: Razorpay Node SDK (v2.9)
+- Document Generation: PDFKit (v0.15) for streaming financial statements
+- Email Engine: Nodemailer (v9.0) for password reset tokens
+- Cryptography: Node.js native `crypto` module (AES-256-GCM authenticated cipher)
+
+FRONTEND:
+- Core: React 19 (v19.2+) with JSX
+- Build Tool & Bundler: Vite (v8.0+)
+- Styling: Tailwind CSS (v4.3+) with @tailwindcss/postcss
+- Routing: React Router DOM (v7.17+) with role-based private guards
+- Icons: Lucide React (v1.18+)
+- Client SDKs: Firebase Web Client SDK (v12.14) for recaptcha & SMS OTP
+
+1.3. User Persona & Role Matrix
+--------------------------------------------------------------------------------
+The system defines 4 distinct roles enforced via JWT role claims and middleware:
+
++----------------+-------------------------------------------------------------+
+| Role           | Scope & Responsibilities                                    |
++----------------+-------------------------------------------------------------+
+| admin          | Platform Owner. Manages subscription plans, views aggregate |
+|                | platform revenue, activates/deactivates vendors, manages    |
+|                | platform Razorpay gateway keys.                             |
+| vendor         | Water Distributor / Business Owner. Manages bottle catalog, |
+|                | customer directory, ledger adjustments, delivery staff,     |
+|                | shift reconciliations, delivery slots, and own Razorpay key.|
+| agent          | Field Delivery Agent / Driver. Mobile-first dashboard to   |
+|                | view open deliveries, self-claim orders, record bottles     |
+|                | delivered/returned, collect cash on delivery.               |
+| customer       | Consumer / Household / Office. Orders water, tracks delivery|
+|                | status, selects delivery slots, manages up to 5 addresses,  |
+|                | views bottle ledger, and pays outstanding balance online.   |
++----------------+-------------------------------------------------------------+
+
+
+================================================================================
+2. PROJECT DIRECTORY STRUCTURE
+================================================================================
+
+```
+water_supply_management-main/
+│
+├── backend/
+│   ├── config/
+│   │   ├── db.js                     # MongoDB connection with retry logic
+│   │   └── firebase.js               # Firebase Admin SDK initialization
+│   ├── controllers/
+│   │   ├── adminController.js        # Platform analytics, plans, vendor management
+│   │   ├── agentController.js        # Delivery run-sheet, claim/release orders
+│   │   ├── authController.js         # JWT auth, vendor signup, OTP verify, profile
+│   │   ├── customerController.js     # Customer storefront, addresses, phone change
+│   │   ├── orderController.js        # Order lifecycle, partial delivery, PDF export
+│   │   ├── paymentController.js      # Razorpay orders, signatures, gateway config
+│   │   └── vendorController.js       # Products, customers, staff, settlements
+│   ├── middleware/
+│   │   └── auth.js                   # JWT protect, authorize, checkSubscription
+│   ├── models/
+│   │   ├── AgentJarSettlement.js     # Shift-end empty jar reconciliation
+│   │   ├── AgentSettlement.js        # Shift-end cash collection reconciliation
+│   │   ├── Order.js                  # Delivery orders, line items, quantities
+│   │   ├── Otp.js                    # 5-minute TTL phone change verification
+│   │   ├── Payment.js                # Financial transactions & Razorpay logs
+│   │   ├── Product.js                # Bottled water inventory & pricing
+│   │   ├── RazorpayConfig.js         # Platform-level Razorpay credentials
+│   │   ├── SubscriptionPlan.js       # SaaS subscription tiers & quotas
+│   │   ├── User.js                   # User accounts (AES encrypted secrets)
+│   │   ├── VendorCustomer.js         # Double ledger (INR balance + bottle count)
+│   │   └── VendorSubscription.js     # Vendor subscription tenure tracking
+│   ├── routes/
+│   │   ├── admin.js                  # /api/v1/admin
+│   │   ├── agent.js                  # /api/v1/agent
+│   │   ├── auth.js                   # /api/v1/auth
+│   │   ├── customer.js               # /api/v1/customer
+│   │   ├── orders.js                 # /api/v1/orders
+│   │   ├── payment.js                # /api/v1/payment
+│   │   └── vendor.js                 # /api/v1/vendor
+│   ├── tests/                        # Automated unit & integration tests
+│   │   ├── deliveryAgentAccess.test.js
+│   │   ├── indiaDate.test.js
+│   │   ├── orderQuantities.test.js
+│   │   ├── pagination.test.js
+│   │   └── secretEncryption.test.js
+│   ├── utils/
+│   │   ├── agentCash.js              # In-field cash validation logic
+│   │   ├── deliveryAgentAccess.js    # Access control predicates for field staff
+│   │   ├── indiaDate.js              # IST (Asia/Kolkata) calendar day boundary
+│   │   ├── pagination.js             # Standardized cursor & limit/page parser
+│   │   ├── pdfGenerator.js           # PDFKit statement layout engine
+│   │   ├── secretEncryption.js       # AES-256-GCM symmetric cipher utility
+│   │   └── sendEmail.js              # Nodemailer email transport
+│   ├── .env.example                  # Backend environment template
+│   ├── package.json                  # Express server dependencies & scripts
+│   └── server.js                     # App entry point, middleware, seedDefaults
+│
+├── frontend/
+│   ├── src/
+│   │   ├── assets/                   # Static branding icons & SVG assets
+│   │   ├── components/
+│   │   │   └── VendorAgentsPanel.jsx # Vendor staff management & settlement UI
+│   │   ├── config/
+│   │   │   └── firebase.js           # Firebase Web Client configuration
+│   │   ├── context/
+│   │   │   └── AuthContext.jsx       # Global auth state, JWT management, authFetch
+│   │   ├── pages/
+│   │   │   ├── AdminDashboard.jsx    # Platform admin console
+│   │   │   ├── AgentDashboard.jsx    # Mobile-first delivery staff workspace
+│   │   │   ├── BusinessLogin.jsx     # Email/password portal for Admin & Vendor
+│   │   │   ├── CustomerDashboard.jsx # Storefront, ordering, online payments
+│   │   │   ├── ForgotPassword.jsx    # Password recovery request form
+│   │   │   ├── Login.jsx             # Customer & Agent phone OTP login
+│   │   │   ├── ResetPassword.jsx     # Token-based password reset form
+│   │   │   └── VendorDashboard.jsx   # Distributor management console
+│   │   ├── App.jsx                   # React Router routing & PrivateRoute guards
+│   │   ├── index.css                 # Tailwind CSS v4 styling rules
+│   │   └── main.jsx                  # React DOM entry point
+│   ├── .env.example                  # Frontend environment template
+│   ├── package.json                  # Frontend Vite dependencies & scripts
+│   └── vite.config.js                # Vite build configuration
+│
+├── api.txt                           # Complete 43-endpoint API documentation
+├── endpoints.txt                     # Quick-lookup endpoints directory
+└── bug.text                          # Historical audit report & optimizations
+```
+
+
+================================================================================
+3. ENVIRONMENT CONFIGURATION & SETUP GUIDE
+================================================================================
+
+3.1. Prerequisites
+--------------------------------------------------------------------------------
+1. Node.js: >= v18.0.0 (v20+ or v24+ recommended)
+2. MongoDB: Local or Atlas instance.
+   IMPORTANT: Because the backend utilizes multi-document ACID transactions
+   (`mongoose.startSession()` and `session.withTransaction()`), the MongoDB
+   instance MUST be initialized as a Replica Set (`rs0`).
+   For standalone local installations, start mongod with:
+   `mongod --port 27017 --dbpath <data_dir> --replSet rs0`
+   and run `rs.initiate()` once in mongosh.
+
+3.2. Backend Environment Variables (`backend/.env`)
+--------------------------------------------------------------------------------
+Create `backend/.env` based on `backend/.env.example`:
+
+```env
+# Server Runtime
+PORT=5000
+NODE_ENV=development
+FRONTEND_URL=http://localhost:5173
+
+# Database Connection (Replica Set URI required for transactions)
+MONGO_URI=mongodb://127.0.0.1:27017/water_supply_db?replicaSet=rs0
+
+# JWT Authentication
+JWT_SECRET=super_secret_water_token_key_123!
+
+# Encryption Key for Secrets (AES-256-GCM: exactly 64 hexadecimal characters)
+# Generate via: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+RAZORPAY_SECRET_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+# Firebase Admin Service Account (For Customer & Agent Phone Verification)
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIREBASE_PRIVATE_KEY_ID=your-private-key-id
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
+FIREBASE_CLIENT_ID=your-client-id
+FIREBASE_CLIENT_X509_CERT_URL=https://www.googleapis.com/robot/v1/metadata/x509/...
+
+# SMTP Email Configuration (Password Reset)
+SMTP_HOST=smtp.mailtrap.io
+SMTP_PORT=2525
+SMTP_EMAIL=dummy_user
+SMTP_PASSWORD=dummy_pass
+FROM_NAME="Water Supply Management"
+FROM_EMAIL="noreply@watersupply.com"
+```
+
+3.3. Frontend Environment Variables (`frontend/.env`)
+--------------------------------------------------------------------------------
+Create `frontend/.env` based on `frontend/.env.example`:
+
+```env
+# Application Settings
+VITE_PROJECT_NAME="H2O Delivery Management"
+VITE_API_URL=http://localhost:5000/api/v1
+
+# Firebase Client Web SDK (For Phone reCAPTCHA and SMS verification)
+VITE_FIREBASE_API_KEY=AIzaSy...
+VITE_FIREBASE_AUTH_DOMAIN=your-app.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-app.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=1234567890
+VITE_FIREBASE_APP_ID=1:1234567890:web:...
+VITE_FIREBASE_MEASUREMENT_ID=G-...
+
+# Development Bypass
+# When set to true, entering any phone number allows typing any 6-digit OTP
+VITE_BYPASS_FIREBASE=false
+```
+
+3.4. Bootstrapping & Initial Seeding
+--------------------------------------------------------------------------------
+When `backend/server.js` starts, the `seedDefaults()` routine runs automatically:
+1. Seeds default System Admin:
+   - Email: `admin@water.com`
+   - Password: `admin123`
+   - Role: `admin`
+2. Seeds default Subscription Plans:
+   - `Free Trial`: Price ₹0, 10,000 users, monthly.
+   - `Monthly Starter`: Price ₹499, 50 users, monthly.
+   - `Quarterly Pro`: Price ₹1299, 150 users, quarterly.
+   - `Yearly Enterprise`: Price ₹4499, 500 users, yearly.
+3. Seeds default Vendor:
+   - Name: `AquaFlow Water Suppliers`
+   - Email: `vendor@water.com` / Phone: `8888888888`
+   - Password: `vendor123`
+   - Active Plan: `Monthly Starter` (30 days active)
+
+3.5. Running the Application
+--------------------------------------------------------------------------------
+1. Install Dependencies:
+   `cd backend && npm install`
+   `cd ../frontend && npm install`
+
+2. Start Backend Server:
+   `cd backend && npm run dev`      # Runs on http://localhost:5000 via nodemon
+
+3. Start Frontend Dev Server:
+   `cd frontend && npm run dev`     # Runs on http://localhost:5173 via Vite
+
+
+================================================================================
+4. DATABASE ARCHITECTURE & DATA MODELS (MONGOOSE)
+================================================================================
+
+4.1. User Schema (`backend/models/User.js`)
+--------------------------------------------------------------------------------
+Primary identity collection for all 4 roles.
+Key Fields:
+- `name` (String, required): Full name or company name.
+- `phone` (String, required, unique, 10-digits): Primary mobile identifier.
+- `email` (String, unique, sparse): Used for business login and password reset.
+- `password` (String): Bcrpyt hash (salt rounds: 10, pre-save hook).
+- `role` (String, enum: ['admin', 'vendor', 'customer', 'agent'], default: 'customer').
+- `vendorId` (ObjectId, ref: 'User'): Required ONLY if role is 'agent'. Links the
+  delivery staff member to their employing vendor.
+- `address` (String): Primary/default address.
+- `addresses` (Array of Strings): Up to 5 saved customer addresses.
+- `razorpayKeyId` (String): Vendor's public Razorpay API key.
+- `razorpayKeySecret` (String, select: false): Vendor's secret API key.
+  Equipped with transparent getters/setters implementing AES-256-GCM authenticated
+  encryption via `secretEncryption.js`. Never exposed in JSON serialization.
+- `deliverySlots` (Array of Strings): Vendor delivery timing windows.
+- `isActive` (Boolean, default: true): Deactivated users are blocked by auth middleware.
+- `resetPasswordToken` & `resetPasswordExpire`: SHA-256 token storage for password reset.
+
+4.2. Order Schema (`backend/models/Order.js`)
+--------------------------------------------------------------------------------
+Represents delivery requests and logged deliveries.
+Key Fields:
+- `vendorId` (ObjectId, ref: 'User', required, indexed): Distributor fulfilling the order.
+- `customerId` (ObjectId, ref: 'User', required, indexed): Recipient customer.
+- `deliveryAgentId` (ObjectId, ref: 'User', default: null, indexed): Assigned delivery driver.
+- `jarSettlementId` (ObjectId, ref: 'AgentJarSettlement', default: null): Links order to
+  the warehouse shift settlement once empty jars are physically handed over.
+- `products` (Array of Subdocuments):
+  - `productId` (ObjectId, ref: 'Product')
+  - `name` (String)
+  - `quantity` (Number, legacy/active delivery count)
+  - `requestedQuantity` (Number, tracks original customer demand)
+  - `deliveredQuantity` (Number, tracks quantity fulfilled)
+  - `price` (Number, captured at order time)
+- `totalAmount` (Number, required, min: 0): Order subtotal in INR.
+- `bottlesDelivered` (Number, default: 0): Total cans handed to customer.
+- `bottlesReturned` (Number, default: 0): Empty cans taken back from customer.
+- `status` (String, enum: ['pending', 'delivered', 'cancelled'], default: 'pending').
+- `deliverySlot` (String): Target time window.
+- `deliveryAddress` (String): Physical address for delivery.
+- `deliveryDate` (Date): Timestamp when marked delivered.
+Compound Indexes:
+- `{ vendorId: 1, createdAt: -1 }`
+- `{ customerId: 1, createdAt: -1 }`
+- `{ vendorId: 1, status: 1 }`
+- `{ deliveryAgentId: 1, status: 1, createdAt: -1 }`
+
+4.3. Payment Schema (`backend/models/Payment.js`)
+--------------------------------------------------------------------------------
+Financial transactions and audit logs.
+Key Fields:
+- `vendorId` (ObjectId, ref: 'User', required, indexed)
+- `customerId` (ObjectId, ref: 'User', required, indexed)
+- `orderId` (ObjectId, ref: 'Order', default: null)
+- `collectedByAgentId` (ObjectId, ref: 'User', default: null, indexed): Delivery agent
+  who physically received cash from customer.
+- `agentSettlementId` (ObjectId, ref: 'AgentSettlement', default: null, indexed):
+  Set when the delivery agent submits cash to the vendor at shift end.
+- `amount` (Number, required, min: 0): Transaction amount in INR.
+- `paymentMethod` (String, enum: ['cash', 'online', 'other'], default: 'cash').
+- `status` (String, enum: ['pending', 'captured'], default: 'captured').
+- `razorpayOrderId` (String, sparse, unique): Idempotency key for online order.
+- `razorpayPaymentId` (String, sparse, unique): Idempotency key for gateway payment.
+- `notes` (String)
+Compound Indexes:
+- `{ vendorId: 1, paymentDate: -1 }`
+- `{ customerId: 1, paymentDate: -1 }`
+- `{ vendorId: 1, collectedByAgentId: 1, agentSettlementId: 1, paymentDate: -1 }`
+
+4.4. VendorCustomer Schema (`backend/models/VendorCustomer.js`)
+--------------------------------------------------------------------------------
+Maintains the two-sided ongoing commercial relationship:
+- `vendorId` (ObjectId, ref: 'User', required)
+- `customerId` (ObjectId, ref: 'User', required)
+- `balance` (Number, default: 0):
+  Positive = Customer owes vendor money (Debt).
+  Negative = Customer has an advance balance / credit.
+- `bottlesOutstanding` (Number, default: 0):
+  Net physical jars held by customer: `(Total Delivered - Total Returned)`.
+Compound Index:
+- `{ vendorId: 1, customerId: 1 }` (unique)
+
+4.5. AgentSettlement Schema (`backend/models/AgentSettlement.js`)
+--------------------------------------------------------------------------------
+Reconciliation record for in-field cash handover:
+- `vendorId` (ObjectId, ref: 'User', required)
+- `agentId` (ObjectId, ref: 'User', required)
+- `paymentIds` (Array of ObjectId, ref: 'Payment'): Specific payment records cleared.
+- `amount` (Number, required, min: 0.01): Total physical cash received.
+- `submittedAt` (Date, default: Date.now)
+
+4.6. AgentJarSettlement Schema (`backend/models/AgentJarSettlement.js`)
+--------------------------------------------------------------------------------
+Reconciliation record for returned empty jars:
+- `vendorId` (ObjectId, ref: 'User', required)
+- `agentId` (ObjectId, ref: 'User', required)
+- `orderIds` (Array of ObjectId, ref: 'Order'): Deliveries whose returns are cleared.
+- `jarCount` (Number, required, min: 1): Total physical empty jars returned to warehouse.
+- `submittedAt` (Date, default: Date.now)
+
+4.7. SubscriptionPlan & VendorSubscription
+--------------------------------------------------------------------------------
+- `SubscriptionPlan`: Tiers with `name`, `price`, `duration` ('monthly', 'quarterly',
+  'yearly'), `userLimit` (max customers allowed), and `isActive`.
+- `VendorSubscription`: Tracks active tenure for a vendor with `vendorId`, `planId`,
+  `startDate`, `endDate`, and `isActive`. Enforced by `checkSubscription` middleware.
+
+4.8. Product Schema (`backend/models/Product.js`)
+--------------------------------------------------------------------------------
+Distributor catalog items:
+- `vendorId` (ObjectId, ref: 'User', required)
+- `name` (String, required), `price` (Number, required), `stock` (Number, default: 0),
+  `quantity` (String, e.g. "20 Litres"), `imageUrl` (String), `isActive` (Boolean).
+
+
+================================================================================
+5. CORE BUSINESS WORKFLOWS & STATE MACHINES
+================================================================================
+
+5.1. Order Lifecycle & Fulfillment
+--------------------------------------------------------------------------------
+```
+[Customer Places Order] ───> Status: PENDING (unassigned)
+                                   │
+                    ┌──────────────┴──────────────┐
+                    ▼                             ▼
+       [Vendor Assigns to Agent]       [Agent Self-Claims Order]
+                    │                             │
+                    └──────────────┬──────────────┘
+                                   │
+                                   ▼
+                       Status: PENDING (claimed)
+                                   │
+                    ┌──────────────┴──────────────┐
+                    ▼                             ▼
+         [Delivery Agent Delivers]       [Order Cancelled]
+                    │                             │
+                    ▼                             ▼
+         Status: DELIVERED               Status: CANCELLED
+         - Deducts product stock         - Reverts balance & jars
+         - Updates customer balance        (if previously delivered)
+         - Updates jar ledger
+         - If Cash: marks Payment
+           with collectedByAgentId
+```
+
+5.2. Double-Ledger Accounting Mechanics
+--------------------------------------------------------------------------------
+Whenever an order transitions to `delivered`:
+1. Monetary Ledger:
+   `VendorCustomer.balance += order.totalAmount`
+   If the customer pays cash on delivery:
+   `Payment.create({ amount: cashAmount, paymentMethod: 'cash', ... })`
+   `VendorCustomer.balance -= cashAmount`
+2. Physical Asset (Jar) Ledger:
+   `VendorCustomer.bottlesOutstanding += (bottlesDelivered - bottlesReturned)`
+   Example: If 2 full cans delivered and 1 empty can returned, `bottlesOutstanding`
+   increases by +1. If 0 cans delivered and 2 empty cans returned, it decreases by -2.
+
+5.3. Two-Stage Chain of Custody (Cash & Jars)
+--------------------------------------------------------------------------------
+Stage 1: In the Field (Customer &rarr; Delivery Agent)
+- Delivery agent completes delivery and collects ₹160 cash + 2 empty jars.
+- Customer debt is immediately cleared.
+- System sets `payment.collectedByAgentId = agent._id` and `agentSettlementId = null`.
+- System records `order.bottlesReturned = 2` and `jarSettlementId = null`.
+- Result: The cash and empty jars are officially in the AGENT'S physical custody.
+
+Stage 2: At Warehouse (Delivery Agent &rarr; Vendor)
+- In the evening, the agent returns to the plant and hands over physical cash and jars.
+- Vendor reviews pending sums and clicks "Submit Cash Settlement" / "Submit Jar Settlement".
+- An ACID transaction runs:
+  - Creates `AgentSettlement` (or `AgentJarSettlement`).
+  - Sets `agentSettlementId` on all un-settled Payment documents.
+  - Sets `jarSettlementId` on all un-settled Order documents.
+- Result: Agent's pending holding resets to 0. Vendor books reflect reconciled cash.
+
+5.4. Customer Phone Authentication Lifecycle
+--------------------------------------------------------------------------------
+1. Client enters 10-digit mobile number on `/login`.
+2. Firebase reCAPTCHA generates SMS OTP.
+3. User enters 6-digit OTP &rarr; Firebase Client SDK produces `idToken`.
+4. Client calls `POST /api/v1/auth/verify-otp` with `idToken`.
+5. Backend verifies token via Firebase Admin SDK and checks MongoDB:
+   - If User exists with `role: 'customer'`: returns JWT token and customer profile.
+   - If User exists with `role: 'agent'`: returns JWT token, agent profile, vendorId.
+   - If User is new: returns `isNewUser: true`. Frontend prompts Name and Address,
+     then calls `POST /api/v1/auth/register-customer`.
+
+
+================================================================================
+6. COMPLETE REST API REFERENCE (43 ENDPOINTS)
+================================================================================
+
+All endpoints are mounted under `/api/v1`. Authentication uses `Authorization: Bearer <token>`.
+
+Module 1: Health & System (1 Endpoint)
+- GET    /health                                [Public] Health check probe.
+
+Module 2: Authentication & Profile (8 Endpoints)
+- POST   /auth/register-vendor                 [Public] Sign up vendor + free trial plan.
+- POST   /auth/login                           [Public] Admin/Vendor password login.
+- POST   /auth/send-otp                        [Public] Client SDK OTP info notice.
+- POST   /auth/verify-otp                      [Public] Verify Firebase token; return JWT.
+- POST   /auth/register-customer               [Public] Complete new customer profile.
+- GET    /auth/me                              [Private] Get current user profile.
+- POST   /auth/forgot-password                 [Public] Send 15-min reset token by email.
+- PUT    /auth/reset-password/:token           [Public] Reset password with email token.
+
+Module 3: Platform Administration (9 Endpoints)
+- GET    /admin/stats                          [Admin] Global metrics, vendor counts, revenue.
+- POST   /admin/plans                          [Admin] Create subscription plan.
+- GET    /admin/plans                          [Admin] List all subscription plans.
+- DELETE /admin/plans/:id                      [Admin] Delete unused subscription plan.
+- GET    /admin/vendors                        [Admin] List vendors with subscription status.
+- PUT    /admin/vendors/:id                    [Admin] Update/deactivate vendor.
+- DELETE /admin/vendors/:id                    [Admin] Cascade delete single vendor.
+- DELETE /admin/vendors                        [Admin] Cascade bulk delete all vendors.
+- POST   /admin/assign-subscription            [Admin] Override vendor subscription plan.
+
+Module 4: Vendor / Distributor Management (15 Endpoints)
+- GET    /vendor/subscription                  [Vendor] Check subscription & quota usage.
+- POST   /vendor/products                      [Vendor] Add new product to catalog.
+- GET    /vendor/products                      [Vendor/Customer] List vendor products.
+- PUT    /vendor/products/:id                  [Vendor] Update product details/stock.
+- DELETE /vendor/products/:id                  [Vendor] Delete catalog item.
+- POST   /vendor/customers                     [Vendor] Connect customer by phone.
+- GET    /vendor/customers                     [Vendor] List connected customer ledgers.
+- PUT    /vendor/customers/:customerId         [Vendor] Manually adjust balance or jars.
+- PUT    /vendor/profile                       [Vendor] Update details, slots, Razorpay keys.
+- GET    /vendor/plans                         [Vendor] View paid subscription tiers.
+- GET    /vendor/agents                        [Vendor] List staff with live shift totals.
+- POST   /vendor/agents                        [Vendor] Register new delivery staff member.
+- POST   /vendor/agents/:agentId/settlements   [Vendor] Settle cash collected by agent.
+- POST   /vendor/agents/:agentId/jar-settlements [Vendor] Settle empty jars returned by agent.
+- PUT    /vendor/orders/:orderId/agent         [Vendor] Assign/reassign order to agent.
+
+Module 5: Delivery Agent APIs (3 Endpoints)
+- GET    /agent/dashboard                      [Agent] Driver workspace (orders, shift stats).
+- PUT    /agent/orders/:orderId/claim          [Agent] Self-claim an open pending delivery.
+- PUT    /agent/orders/:orderId/release        [Agent] Unclaim delivery back to open pool.
+
+Module 6: Customer Portal (5 Endpoints)
+- GET    /customer/vendors                     [Customer] List connected suppliers & dues.
+- GET    /customer/vendors/:vendorId           [Customer] View vendor storefront & catalog.
+- PUT    /customer/profile                     [Customer] Update profile & 5 saved addresses.
+- POST   /customer/change-phone-request        [Customer] Send OTP to new mobile number.
+- PUT    /customer/change-phone-verify         [Customer] Verify OTP and update phone.
+
+Module 7: Orders, Deliveries & PDF Statements (6 Endpoints)
+- POST   /orders                               [Vendor/Customer] Create order / delivery.
+- PUT    /orders/:id/status                    [Vendor/Agent] Fulfill order, log cash/jars.
+- POST   /orders/payments                      [Vendor] Record offline cash received.
+- GET    /orders                               [Vendor/Customer/Agent] Query order history.
+- GET    /orders/payments                      [Vendor/Customer] Query payment records.
+- GET    /orders/pdf-report                    [Vendor] Stream formatted PDF statement.
+
+Module 8: Payment Gateway & Razorpay (6 Endpoints)
+- GET    /payment/config                       [Admin] Check platform gateway status.
+- POST   /payment/config                       [Admin] Save platform gateway keys.
+- POST   /payment/create-order                 [Vendor] Create subscription Razorpay order.
+- POST   /payment/verify                       [Vendor] Verify subscription HMAC & activate.
+- POST   /payment/customer/create-order        [Customer] Create bill payment order for vendor.
+- POST   /payment/customer/verify              [Customer] Verify customer payment HMAC.
+
+
+================================================================================
+7. SECURITY, CRYPTOGRAPHY & DATA INTEGRITY
+================================================================================
+
+7.1. Symmetric Encryption for Third-Party Secrets (AES-256-GCM)
+--------------------------------------------------------------------------------
+Vendor `razorpayKeySecret` values are encrypted before writing to MongoDB.
+Implementation: `backend/utils/secretEncryption.js`
+- Algorithm: `aes-256-gcm` authenticated symmetric encryption.
+- Key: 256-bit (32 bytes) hex-encoded key from `RAZORPAY_SECRET_ENCRYPTION_KEY`.
+- Format: `enc:v1:<iv_hex>:<auth_tag_hex>:<ciphertext_hex>`.
+- Integrity: GCM mode produces an authentication tag preventing ciphertext tampering.
+- Data Leak Prevention: Mongoose Schema transforms delete `razorpayKeySecret` during
+  JSON serialization and defaults to `select: false`.
+
+7.2. Multi-Document ACID Transactions
+--------------------------------------------------------------------------------
+All multi-table operations (such as order delivery, inventory deduction, and shift
+settlements) are wrapped in MongoDB transactions:
+```javascript
+const session = await mongoose.startSession();
+await session.withTransaction(async () => {
+  // 1. Verify and decrement stock atomically
+  // 2. Update Order status and delivery timestamp
+  // 3. Mutate VendorCustomer ledger balance and bottle count
+  // 4. Create Payment log if cash was collected
+});
+await session.endSession();
+```
+
+7.3. Idempotency & Payment Replay Protection
+--------------------------------------------------------------------------------
+- In `Payment.js`, `razorpayOrderId` and `razorpayPaymentId` have `{ sparse: true, unique: true }`
+  indexes. Any duplicate webhook or replayed verification request is rejected
+  by MongoDB unique constraint error (E11000).
+- Payment verification validates order status and amount before balance deductions.
+
+7.4. Indian Calendar Day Timezone Alignment
+--------------------------------------------------------------------------------
+Delivery summaries, daily cash collections, and agent statistics are calculated
+according to Indian Standard Time (IST / Asia/Kolkata), independently of the
+server host's local clock (e.g., UTC on AWS/Heroku/DigitalOcean).
+Implementation: `backend/utils/indiaDate.js` generates precise `start` (00:00:00+05:30)
+and `end` (24:00:00+05:30) Date boundaries using `Intl.DateTimeFormat`.
+
+
+================================================================================
+8. FRONTEND ARCHITECTURE & CLIENT-SIDE DESIGN
+================================================================================
+
+8.1. State Management & Authentication (`AuthContext.jsx`)
+--------------------------------------------------------------------------------
+- `user`: Holds profile object, roles, and vendor links.
+- `token`: Persisted in `localStorage`.
+- `authFetch(endpoint, options)`: Wrapper around `fetch` that automatically attaches
+  `Authorization: Bearer <token>`, formats JSON payloads, and triggers `logout()`
+  upon receiving HTTP 401 Unauthorized.
+
+8.2. Routing & Guarding Architecture (`App.jsx`)
+--------------------------------------------------------------------------------
+- Public Routes:
+  `/login` &rarr; Customer & Delivery Agent Phone OTP login.
+  `/business-login` &rarr; Admin & Vendor email/password login.
+  `/forgot-password` & `/reset-password/:token` &rarr; Password recovery.
+- Protected Routes (Guarded by `PrivateRoute`):
+  `/admin/*` &rarr; Role: `admin` (AdminDashboard)
+  `/vendor/*` &rarr; Role: `vendor` (VendorDashboard)
+  `/agent/*` &rarr; Role: `agent` (AgentDashboard)
+  `/customer/*` &rarr; Role: `customer` (CustomerDashboard)
+- Root `/` redirects intelligently based on active session and user role.
+
+8.3. Mobile-First Field Delivery Workspace (`AgentDashboard.jsx`)
+--------------------------------------------------------------------------------
+Designed specifically for drivers on mobile phones:
+- Big touch targets, card layout, high-contrast dark theme.
+- Tap-to-Call (`tel:+91...`) customer phone directly from card.
+- Tap-to-Navigate opens Google Maps with customer coordinates/address.
+- One-click Claim / Release buttons with optimistic concurrency lock.
+- Simple delivery completion modal (Delivered Cans, Returned Empty Cans, Cash Collected).
+- Shift status cards: Pending cash in hand, pending jars in truck, recent settlements.
+
+
+================================================================================
+9. AUTOMATED TESTING & VERIFICATION SUITE
+================================================================================
+
+The repository includes standalone Node.js test suites using Node's native test runner
+(`node --test`), requiring zero external test dependencies:
+
+To run all tests:
+```bash
+cd backend
+node tests/deliveryAgentAccess.test.js
+node tests/indiaDate.test.js
+node tests/orderQuantities.test.js
+node tests/pagination.test.js
+node tests/secretEncryption.test.js
+```
+
+Test Coverage Breakdown:
+1. `deliveryAgentAccess.test.js`:
+   - Asserts agents can only view/modify orders assigned by their employing vendor.
+   - Asserts agents cannot manipulate unauthorized accounting fields.
+   - Validates in-field cash collection ceilings.
+2. `indiaDate.test.js`:
+   - Asserts calendar day boundaries are accurately computed in IST across leap years
+     and standard timezone offsets.
+3. `orderQuantities.test.js`:
+   - Validates multi-product partial delivery allocation logic.
+   - Asserts requests cannot be over-delivered beyond available stock.
+   - Validates empty bottle return mechanics.
+4. `pagination.test.js`:
+   - Tests cursor, page, and limit query string parsing with boundary checks.
+5. `secretEncryption.test.js`:
+   - Verifies AES-256-GCM encryption/decryption roundtrips.
+   - Asserts tampered ciphertexts are detected and rejected.
+
+
+================================================================================
+10. DEPLOYMENT, PRODUCTION CHECKLIST & TROUBLESHOOTING
+================================================================================
+
+10.1. Production Deployment Checklist
+--------------------------------------------------------------------------------
+[ ] 1. Set `NODE_ENV=production` in backend environment.
+[ ] 2. Generate a secure 64-character hex key for `RAZORPAY_SECRET_ENCRYPTION_KEY`.
+[ ] 3. Change `JWT_SECRET` to a high-entropy 256-bit secret.
+[ ] 4. Replace `MONGO_URI` with production MongoDB Atlas cluster (Replica Set enabled).
+[ ] 5. Set `FRONTEND_URL` to the production domain (e.g. `https://water.example.com`).
+[ ] 6. Upload real Firebase Admin JSON credentials and verify Client SDK keys.
+[ ] 7. Set `VITE_BYPASS_FIREBASE=false` in frontend production environment.
+[ ] 8. Change default Admin (`admin@water.com`) and Vendor passwords immediately.
+[ ] 9. Build frontend assets using `npm run build` inside `frontend/` (outputs to `dist/`).
+
+10.2. Common Troubleshooting Scenarios
+--------------------------------------------------------------------------------
+Issue: "Transaction numbers are only allowed on a replica set member or mongos"
+Cause: MongoDB is running as a standalone node. MongoDB multi-document transactions
+       require a replica set.
+Fix: Start mongod with `--replSet rs0` and run `rs.initiate()` in mongosh.
+
+Issue: "RAZORPAY_SECRET_ENCRYPTION_KEY must be configured as 64 hexadecimal characters"
+Cause: Missing or invalid key length in `.env`.
+Fix: Generate a valid key: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+
+Issue: Firebase Auth Error: "auth/invalid-app-credential"
+Cause: Domain not whitelisted in Firebase Console.
+Fix: Add `localhost` and your production domain under Firebase Console ->
+     Authentication -> Settings -> Authorized Domains.
+
+Issue: Delivery Agent cannot log in with OTP
+Cause: The agent's phone number was registered under a vendor or customer role previously.
+Fix: Phone numbers must be unique across the platform. Verify role in `users` collection.
+
+================================================================================
+END OF DEVELOPER DOCUMENTATION
+================================================================================
