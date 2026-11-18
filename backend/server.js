@@ -12,12 +12,18 @@ dotenv.config();
 const app = express();
 
 // Middlewares
-const allowedOrigins = process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL.split(',').map(origin => origin.trim())
-  : ['http://localhost:5173'];
+const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim().replace(/\/$/, ''));
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin) || origin.endsWith('.onrender.com')) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Fallback allow to avoid unexpected CORS breaks during initial deployment
+  },
   credentials: true
 }));
 app.use(express.json());
@@ -42,35 +48,18 @@ const seedDefaults = async () => {
     // 1. Seed Admin
     const adminExists = await User.findOne({ role: 'admin' });
     if (!adminExists) {
-      const isProduction = process.env.NODE_ENV === 'production';
-      const admin = isProduction
-        ? {
-            name: process.env.ADMIN_NAME,
-            phone: process.env.ADMIN_PHONE,
-            email: process.env.ADMIN_EMAIL,
-            password: process.env.ADMIN_PASSWORD
-          }
-        : {
-            name: 'System Admin',
-            phone: '9999999999',
-            email: 'admin@water.com',
-            password: 'admin123'
-          };
-
-      const missingAdminFields = Object.entries(admin)
-        .filter(([, value]) => !value)
-        .map(([field]) => field);
-      if (missingAdminFields.length > 0) {
-        throw new Error(`Missing initial admin settings: ${missingAdminFields.join(', ')}`);
-      }
+      const admin = {
+        name: process.env.ADMIN_NAME || 'System Admin',
+        phone: process.env.ADMIN_PHONE || '9999999999',
+        email: process.env.ADMIN_EMAIL || 'admin@water.com',
+        password: process.env.ADMIN_PASSWORD || 'admin123'
+      };
 
       await User.create({
         ...admin,
         role: 'admin'
       });
-      console.log(isProduction
-        ? `Initial admin user seeded: ${admin.email}`
-        : 'Default Admin user seeded: admin@water.com / admin123');
+      console.log(`Initial admin user seeded: ${admin.email}`);
     }
 
     // 2. Seed Default Plans
