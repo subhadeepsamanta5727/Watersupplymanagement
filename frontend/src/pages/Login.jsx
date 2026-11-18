@@ -54,13 +54,14 @@ const Login = () => {
     setError('');
     setLoading(true);
     
-    // DEV BYPASS
-    if (import.meta.env.DEV || import.meta.env.VITE_BYPASS_FIREBASE === 'true') {
+    // DEMO NUMBERS & DEV BYPASS
+    const demoPhones = ['8888888888', '7777777777', '9999999999', '9876543210'];
+    if (demoPhones.includes(phone) || import.meta.env.DEV || import.meta.env.VITE_BYPASS_FIREBASE === 'true') {
       setTimeout(() => {
         setOtpSent(true);
-        setMessage('DEV BYPASS: OTP bypassed for development. Enter any 6 digits.');
+        setMessage('Demo account detected. Enter test OTP: 123456');
         setLoading(false);
-      }, 500);
+      }, 400);
       return;
     }
 
@@ -92,8 +93,9 @@ const Login = () => {
     setError('');
     setLoading(true);
 
-    // DEV BYPASS
-    if (import.meta.env.DEV || import.meta.env.VITE_BYPASS_FIREBASE === 'true') {
+    // DEMO NUMBERS & DEV BYPASS
+    const demoPhones = ['8888888888', '7777777777', '9999999999', '9876543210'];
+    if (demoPhones.includes(phone) || import.meta.env.DEV || import.meta.env.VITE_BYPASS_FIREBASE === 'true') {
       try {
         const devToken = `DEV_TOKEN_${phone}`;
         setIdToken(devToken);
@@ -102,7 +104,7 @@ const Login = () => {
         if (res.success) {
           if (res.isNewUser) {
             setShowProfilePopup(true);
-            setMessage('DEV BYPASS: Please complete your registration.');
+            setMessage('Demo user: Please complete your profile.');
           } else {
             navigate(res.user.role === 'agent' ? '/agent' : '/customer');
           }
@@ -110,7 +112,7 @@ const Login = () => {
           setError(res.message || 'Failed to verify account on backend');
         }
       } catch (err) {
-        setError('Dev bypass failed');
+        setError('Verification failed');
       } finally {
         setLoading(false);
       }
