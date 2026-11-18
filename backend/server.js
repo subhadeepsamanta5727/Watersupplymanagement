@@ -9,6 +9,14 @@ const VendorSubscription = require('./models/VendorSubscription');
 // Load environment variables
 dotenv.config();
 
+// Global process error handlers
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
 const app = express();
 
 // Middlewares
@@ -37,7 +45,13 @@ app.use('/api/v1/customer', require('./routes/customer'));
 app.use('/api/v1/orders', require('./routes/orders'));
 app.use('/api/v1/payment', require('./routes/payment'));
 
-// Health check endpoint
+// Health check endpoints
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', service: 'water-supply-api' });
+});
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 app.get('/api/v1/health', (req, res) => {
   res.status(200).json({ success: true, message: 'Water Supply API running successfully' });
 });
@@ -143,7 +157,7 @@ const startServer = async () => {
   await connectDB();
   await seedDefaults();
 
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   });
 };
