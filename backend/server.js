@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const connectDB = require('./config/db');
+const { connectDB, getDbStatus } = require('./config/db');
 const User = require('./models/User');
 const SubscriptionPlan = require('./models/SubscriptionPlan');
 const VendorSubscription = require('./models/VendorSubscription');
@@ -53,7 +53,11 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 app.get('/api/v1/health', (req, res) => {
-  res.status(200).json({ success: true, message: 'Water Supply API running successfully' });
+  res.status(200).json({
+    success: true,
+    message: 'Water Supply API running successfully',
+    database: getDbStatus()
+  });
 });
 
 // Seed Initial Admin & default plans helper function
@@ -153,16 +157,16 @@ const seedDefaults = async () => {
 
 const PORT = process.env.PORT || 5000;
 
-const startServer = async () => {
-  await connectDB();
-  await seedDefaults();
-
+const startServer = () => {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
   });
+
+  connectDB()
+    .then(() => seedDefaults())
+    .catch((error) => {
+      console.error(`Database initialization error: ${error.message}`);
+    });
 };
 
-startServer().catch((error) => {
-  console.error(`Server startup failed: ${error.message}`);
-  process.exit(1);
-});
+startServer();
