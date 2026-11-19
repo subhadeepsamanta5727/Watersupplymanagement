@@ -6,7 +6,8 @@ import ThemeToggle from '../components/ThemeToggle';
 import {
   Building, Package, Users, Truck, DollarSign, LogOut, Plus, FileText,
   AlertTriangle, RefreshCw, CheckCircle, Info, Calendar, Download, Menu, X, Settings,
-  IndianRupee, Edit, Activity, MapPin, Eye, Clock, ArrowLeft, History
+  IndianRupee, Edit, Activity, MapPin, Eye, Clock, ArrowLeft, History,
+  Boxes, ShoppingBag, Layers
 } from 'lucide-react';
 
 const getStockStatus = (stock) => {
@@ -18,13 +19,14 @@ const getStockStatus = (stock) => {
 
 const VendorDashboard = () => {
   const { logout, user, authFetch, refreshUser } = useAuth();
-  const [activeTab, setActiveTab] = useState('overview'); // overview, subscription, products, customers, agents, deliveries, payments, settings
+  const [activeTab, setActiveTab] = useState('overview'); // overview, subscription, products, inventory, purchases, customers, agents, deliveries, payments, settings
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Data states
   const [subStatus, setSubStatus] = useState(null);
   const [availablePlans, setAvailablePlans] = useState([]);
   const [products, setProducts] = useState([]);
+  const [purchases, setPurchases] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [agents, setAgents] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -33,9 +35,9 @@ const VendorDashboard = () => {
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [hoveredBar, setHoveredBar] = useState(null);
 
-
   // Form modals
   const [showProductModal, setShowProductModal] = useState(false);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -48,6 +50,16 @@ const VendorDashboard = () => {
   const [prodStock, setProdStock] = useState('');
   const [editingProduct, setEditingProduct] = useState(null);
   const [isStockUpdateOnly, setIsStockUpdateOnly] = useState(false);
+
+  // Form states - Purchase / Stock Inward
+  const [purchaseProdId, setPurchaseProdId] = useState('');
+  const [purchaseQty, setPurchaseQty] = useState('');
+  const [purchaseSupplier, setPurchaseSupplier] = useState('');
+  const [purchaseUnitCost, setPurchaseUnitCost] = useState('');
+  const [purchaseTotalAmount, setPurchaseTotalAmount] = useState('');
+  const [purchaseInvoice, setPurchaseInvoice] = useState('');
+  const [purchaseNotes, setPurchaseNotes] = useState('');
+  const [purchaseDate, setPurchaseDate] = useState('');
 
   // Form states - Customer
   const [custPhone, setCustPhone] = useState('');
@@ -135,9 +147,10 @@ const VendorDashboard = () => {
         fetchAllPages('/orders'),
         fetchAllPages('/orders/payments'),
         authFetch('/vendor/plans'),
-        authFetch('/vendor/agents')
+        authFetch('/vendor/agents'),
+        authFetch('/purchases')
       ]);
-      const [subRes, prodRes, custRes, orderRes, payRes, plansRes, agentsRes] = results.map((result) => {
+      const [subRes, prodRes, custRes, orderRes, payRes, plansRes, agentsRes, purchasesRes] = results.map((result) => {
         if (result.status === 'rejected') {
           console.error('Failed to load dashboard data:', result.reason);
           return null;
@@ -150,6 +163,7 @@ const VendorDashboard = () => {
       }
 
       if (prodRes?.success) setProducts(prodRes.data);
+      if (purchasesRes?.success) setPurchases(purchasesRes.data || []);
       if (custRes?.success) setCustomers(custRes.data);
       if (orderRes?.success) setOrders(orderRes.data);
       if (payRes?.success) setPayments(payRes.data);
@@ -297,6 +311,53 @@ const VendorDashboard = () => {
         fetchData();
       } else {
         setError(res.message || 'Failed to delete product');
+      }
+    } catch (err) {
+      setError('Connection failure');
+    }
+  };
+
+  // Handle record purchase / stock inward
+  const handleRecordPurchase = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (!purchaseProdId) return setError('Please select a product to purchase');
+    const qty = Number(purchaseQty);
+    if (!Number.isInteger(qty) || qty <= 0) return setError('Quantity must be a positive whole number');
+
+    const unitCostNum = Number(purchaseUnitCost || 0);
+    const totalAmountNum = Number(purchaseTotalAmount) > 0 ? Number(purchaseTotalAmount) : unitCostNum * qty;
+
+    try {
+      const res = await authFetch('/purchases', {
+        method: 'POST',
+        body: JSON.stringify({
+          productId: purchaseProdId,
+          quantity: qty,
+          unitCost: unitCostNum,
+          totalAmount: totalAmountNum,
+          supplierName: purchaseSupplier,
+          invoiceNumber: purchaseInvoice,
+          purchaseDate: purchaseDate ? new Date(purchaseDate).toISOString() : new Date().toISOString(),
+          notes: purchaseNotes
+        })
+      });
+
+      if (res.success) {
+        setSuccess(res.message || 'Purchase successfully recorded and stock added!');
+        setShowPurchaseModal(false);
+        setPurchaseProdId('');
+        setPurchaseQty('');
+        setPurchaseSupplier('');
+        setPurchaseUnitCost('');
+        setPurchaseTotalAmount('');
+        setPurchaseInvoice('');
+        setPurchaseNotes('');
+        setPurchaseDate('');
+        fetchData();
+      } else {
+        setError(res.message || 'Failed to record purchase');
       }
     } catch (err) {
       setError('Connection failure');
@@ -930,7 +991,31 @@ const VendorDashboard = () => {
               }`}
             >
               <Package size={18} />
-              Products &amp; Inventory
+              Products
+            </button>
+            <button
+              disabled={!isSubActive}
+              onClick={() => { setActiveTab('inventory'); setError(''); setSuccess(''); setSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                activeTab === 'inventory'
+                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
+                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
+              }`}
+            >
+              <Boxes size={18} />
+              Inventory
+            </button>
+            <button
+              disabled={!isSubActive}
+              onClick={() => { setActiveTab('purchases'); setError(''); setSuccess(''); setSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                activeTab === 'purchases'
+                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
+                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
+              }`}
+            >
+              <ShoppingBag size={18} />
+              Purchases
             </button>
             <button
               disabled={!isSubActive}
@@ -1577,8 +1662,11 @@ const VendorDashboard = () => {
           <section className="space-y-6 animate-tab-transition">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
               <div>
-                <h1 className="text-xl md:text-2xl font-bold text-white">Products &amp; Inventory</h1>
-                <p className="text-xs md:text-sm text-slate-400 mt-1">Manage products, prices, and stock. Completed deliveries reduce stock automatically.</p>
+                <h1 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2.5">
+                  <Package className="text-sky-400" size={24} />
+                  Product Catalog
+                </h1>
+                <p className="text-xs md:text-sm text-slate-400 mt-1">Manage selling prices, descriptions, bottle packaging sizes, and product listings.</p>
               </div>
               <button
                 onClick={() => {
@@ -1592,7 +1680,7 @@ const VendorDashboard = () => {
                   setIsStockUpdateOnly(false);
                   setShowProductModal(true);
                 }}
-                className="flex items-center justify-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors self-start sm:self-center"
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors self-start sm:self-center shadow-md shadow-sky-950/30"
               >
                 <Plus size={16} />
                 Add New Product
@@ -1601,92 +1689,302 @@ const VendorDashboard = () => {
 
             <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[850px] border-collapse text-left">
+                <table className="w-full min-w-[700px] border-collapse text-left">
                   <thead>
                     <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
-                      <th className="p-4">Product</th>
-                      <th className="p-4">Size</th>
-                      <th className="p-4">Price</th>
-                      <th className="p-4">Available Stock</th>
-                      <th className="p-4">Status</th>
+                      <th className="p-4">Product Name</th>
+                      <th className="p-4">Size / Volume</th>
+                      <th className="p-4">Selling Price</th>
+                      <th className="p-4">Catalog Status</th>
                       <th className="p-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-marine-800/40 text-sm">
+                    {products.map((prod) => (
+                      <tr key={prod._id} className="hover:bg-marine-card/30 transition-colors">
+                        <td className="p-4">
+                          <div className="font-semibold text-white">{prod.name}</div>
+                          <div className="mt-0.5 max-w-xs truncate text-xs text-slate-400" title={prod.description}>
+                            {prod.description || 'No description'}
+                          </div>
+                        </td>
+                        <td className="p-4 text-slate-300 font-medium">{prod.quantity || 'Standard'}</td>
+                        <td className="p-4 font-bold text-emerald-400">Rs. {prod.price}</td>
+                        <td className="p-4">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            prod.isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
+                          }`}>
+                            {prod.isActive ? 'Active Catalog' : 'Hidden'}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingProduct(prod);
+                                setProdName(prod.name);
+                                setProdPrice(prod.price);
+                                setProdDesc(prod.description || '');
+                                setProdQty(prod.quantity || '');
+                                setProdStock(prod.stock || '');
+                                setIsStockUpdateOnly(false);
+                                setShowProductModal(true);
+                              }}
+                              className="rounded border border-sky-500/20 bg-sky-600/10 px-3 py-1 text-xs font-bold text-sky-400 transition-all hover:border-sky-500 hover:bg-sky-600 hover:text-white"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProduct(prod._id)}
+                              className="rounded border border-rose-500/20 bg-rose-600/10 px-3 py-1 text-xs font-bold text-rose-400 transition-all hover:border-rose-500 hover:bg-rose-600 hover:text-white"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {products.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="p-8 text-center text-sm text-slate-500">
+                          No products added yet. Click Add New Product to start.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* INVENTORY TAB */}
+        {activeTab === 'inventory' && (
+          <section className="space-y-6 animate-tab-transition">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+              <div>
+                <h1 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2.5">
+                  <Boxes className="text-sky-400" size={24} />
+                  Stock &amp; Inventory Management
+                </h1>
+                <p className="text-xs md:text-sm text-slate-400 mt-1">Live tracking of available stock, in-delivery units, and warehouse inventory health.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setError('');
+                  setSuccess('');
+                  setPurchaseProdId(products[0]?._id || '');
+                  setPurchaseQty('');
+                  setPurchaseSupplier('');
+                  setPurchaseUnitCost('');
+                  setPurchaseTotalAmount('');
+                  setPurchaseInvoice('');
+                  setPurchaseNotes('');
+                  setPurchaseDate(new Date().toISOString().split('T')[0]);
+                  setShowPurchaseModal(true);
+                }}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors self-start sm:self-center shadow-md shadow-emerald-950/30"
+              >
+                <Plus size={16} />
+                + Restock / Purchase Stock
+              </button>
+            </div>
+
+            {/* Inventory KPI Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="glass-panel p-4 rounded-2xl border border-marine-800">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Available Stock</span>
+                <span className="text-2xl font-extrabold text-white mt-1 block">
+                  {products.reduce((sum, p) => sum + Number(p.stock || 0), 0)} <span className="text-xs font-normal text-slate-400">units</span>
+                </span>
+                <span className="text-[11px] text-emerald-400 mt-1 block">Ready for customer orders</span>
+              </div>
+              <div className="glass-panel p-4 rounded-2xl border border-marine-800">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">In Delivery</span>
+                <span className="text-2xl font-extrabold text-amber-300 mt-1 block">
+                  {products.reduce((sum, p) => sum + Number(p.pendingDeliveryStock || 0), 0)} <span className="text-xs font-normal text-slate-400">units</span>
+                </span>
+                <span className="text-[11px] text-amber-400/80 mt-1 block">On delivery trucks</span>
+              </div>
+              <div className="glass-panel p-4 rounded-2xl border border-marine-800">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Physical Jars</span>
+                <span className="text-2xl font-extrabold text-sky-400 mt-1 block">
+                  {products.reduce((sum, p) => sum + Number(p.stock || 0) + Number(p.pendingDeliveryStock || 0), 0)} <span className="text-xs font-normal text-slate-400">total</span>
+                </span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Available + In Transit</span>
+              </div>
+              <div className="glass-panel p-4 rounded-2xl border border-marine-800">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Low / Out of Stock</span>
+                <span className="text-2xl font-extrabold text-rose-400 mt-1 block">
+                  {products.filter((p) => Number(p.stock || 0) < 5).length} <span className="text-xs font-normal text-slate-400">products</span>
+                </span>
+                <span className="text-[11px] text-rose-400/80 mt-1 block">Needs restocking</span>
+              </div>
+            </div>
+
+            <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[850px] border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
+                      <th className="p-4">Product</th>
+                      <th className="p-4">Package / Size</th>
+                      <th className="p-4">Available Stock</th>
+                      <th className="p-4">Pending Delivery</th>
+                      <th className="p-4">Total Physical</th>
+                      <th className="p-4">Health Status</th>
+                      <th className="p-4 text-right">Quick Restock</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-marine-800/40 text-sm">
                     {products.map((prod) => {
-                      const stock = Number(prod.stock || 0);
-                      const stockStatus = getStockStatus(stock);
+                      const availStock = Number(prod.stock || 0);
+                      const pendingStock = Number(prod.pendingDeliveryStock || 0);
+                      const totalPhysical = availStock + pendingStock;
+                      const stockStatus = getStockStatus(availStock);
 
                       return (
                         <tr key={prod._id} className="hover:bg-marine-card/30 transition-colors">
-                          <td className="p-4">
-                            <div className="font-semibold text-white">{prod.name}</div>
-                            <div className="mt-0.5 max-w-xs truncate text-xs text-slate-400" title={prod.description}>
-                              {prod.description || 'No description'}
-                            </div>
-                          </td>
-                          <td className="p-4 text-slate-300">{prod.quantity || 'N/A'}</td>
-                          <td className="p-4 font-semibold text-slate-200">Rs. {prod.price}</td>
-                          <td className="p-4">
-                            <div className="font-bold text-white">{stock} available</div>
-                            {Number(prod.pendingDeliveryStock || 0) > 0 && (
-                              <div className="text-[11px] font-semibold text-amber-400 mt-0.5">
-                                {prod.pendingDeliveryStock} pending delivery
-                              </div>
-                            )}
-                          </td>
+                          <td className="p-4 font-semibold text-white">{prod.name}</td>
+                          <td className="p-4 text-slate-300">{prod.quantity || 'Standard'}</td>
+                          <td className="p-4 font-bold text-emerald-400">{availStock} units</td>
+                          <td className="p-4 font-bold text-amber-300">{pendingStock} units</td>
+                          <td className="p-4 font-extrabold text-white">{totalPhysical} units</td>
                           <td className="p-4">
                             <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${stockStatus.className}`}>
                               {stockStatus.label}
                             </span>
                           </td>
-                          <td className="p-4">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                onClick={() => {
-                                  setEditingProduct(prod);
-                                  setProdName(prod.name);
-                                  setProdPrice(prod.price);
-                                  setProdDesc(prod.description || '');
-                                  setProdQty(prod.quantity || '');
-                                  setProdStock('');
-                                  setIsStockUpdateOnly(true);
-                                  setShowProductModal(true);
-                                }}
-                                className="rounded border border-emerald-500/20 bg-emerald-600/10 px-3 py-1 text-xs font-bold text-emerald-400 transition-all hover:border-emerald-500 hover:bg-emerald-600 hover:text-white"
-                              >
-                                Add Stock
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setEditingProduct(prod);
-                                  setProdName(prod.name);
-                                  setProdPrice(prod.price);
-                                  setProdDesc(prod.description || '');
-                                  setProdQty(prod.quantity || '');
-                                  setProdStock(prod.stock || '');
-                                  setIsStockUpdateOnly(false);
-                                  setShowProductModal(true);
-                                }}
-                                className="rounded border border-sky-500/20 bg-sky-600/10 px-3 py-1 text-xs font-bold text-sky-400 transition-all hover:border-sky-500 hover:bg-sky-600 hover:text-white"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDeleteProduct(prod._id)}
-                                className="rounded border border-rose-500/20 bg-rose-600/10 px-3 py-1 text-xs font-bold text-rose-400 transition-all hover:border-rose-500 hover:bg-rose-600 hover:text-white"
-                              >
-                                Delete
-                              </button>
-                            </div>
+                          <td className="p-4 text-right">
+                            <button
+                              onClick={() => {
+                                setPurchaseProdId(prod._id);
+                                setPurchaseQty('');
+                                setPurchaseSupplier('');
+                                setPurchaseUnitCost('');
+                                setPurchaseTotalAmount('');
+                                setPurchaseInvoice('');
+                                setPurchaseNotes('');
+                                setPurchaseDate(new Date().toISOString().split('T')[0]);
+                                setShowPurchaseModal(true);
+                              }}
+                              className="rounded border border-emerald-500/20 bg-emerald-600/10 px-3 py-1.5 text-xs font-bold text-emerald-400 transition-all hover:border-emerald-500 hover:bg-emerald-600 hover:text-white cursor-pointer"
+                            >
+                              + Restock Stock
+                            </button>
                           </td>
                         </tr>
                       );
                     })}
                     {products.length === 0 && (
                       <tr>
-                        <td colSpan="6" className="p-8 text-center text-sm text-slate-500">
-                          No products added yet. Click Add New Product to start.
+                        <td colSpan="7" className="p-8 text-center text-sm text-slate-500">
+                          No products found. Please add products first.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* PURCHASES TAB */}
+        {activeTab === 'purchases' && (
+          <section className="space-y-6 animate-tab-transition">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+              <div>
+                <h1 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2.5">
+                  <ShoppingBag className="text-sky-400" size={24} />
+                  Purchases &amp; Stock Inward
+                </h1>
+                <p className="text-xs md:text-sm text-slate-400 mt-1">Record supplier purchase bills, inward shipment batches, and track procurement spending.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setError('');
+                  setSuccess('');
+                  setPurchaseProdId(products[0]?._id || '');
+                  setPurchaseQty('');
+                  setPurchaseSupplier('');
+                  setPurchaseUnitCost('');
+                  setPurchaseTotalAmount('');
+                  setPurchaseInvoice('');
+                  setPurchaseNotes('');
+                  setPurchaseDate(new Date().toISOString().split('T')[0]);
+                  setShowPurchaseModal(true);
+                }}
+                className="flex items-center justify-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors self-start sm:self-center shadow-md shadow-sky-950/30"
+              >
+                <Plus size={16} />
+                + Record New Purchase
+              </button>
+            </div>
+
+            {/* Purchases Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="glass-panel p-4 rounded-2xl border border-marine-800">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Procurement Spend</span>
+                <span className="text-2xl font-extrabold text-white mt-1 block">
+                  Rs. {purchases.reduce((sum, p) => sum + Number(p.totalAmount || 0), 0).toLocaleString('en-IN')}
+                </span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Overall supplier billing</span>
+              </div>
+              <div className="glass-panel p-4 rounded-2xl border border-marine-800">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Jars Purchased</span>
+                <span className="text-2xl font-extrabold text-emerald-400 mt-1 block">
+                  +{purchases.reduce((sum, p) => sum + Number(p.quantity || 0), 0)} <span className="text-xs font-normal text-slate-400">units</span>
+                </span>
+                <span className="text-[11px] text-emerald-400/80 mt-1 block">Inward restock volume</span>
+              </div>
+              <div className="glass-panel p-4 rounded-2xl border border-marine-800">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Purchase Bills</span>
+                <span className="text-2xl font-extrabold text-sky-400 mt-1 block">
+                  {purchases.length} <span className="text-xs font-normal text-slate-400">invoices</span>
+                </span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Logged purchase records</span>
+              </div>
+            </div>
+
+            <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[850px] border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
+                      <th className="p-4">Date</th>
+                      <th className="p-4">Invoice #</th>
+                      <th className="p-4">Product</th>
+                      <th className="p-4">Qty Received</th>
+                      <th className="p-4">Supplier / Source</th>
+                      <th className="p-4">Unit Cost</th>
+                      <th className="p-4">Total Amount</th>
+                      <th className="p-4">Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-marine-800/40 text-sm">
+                    {purchases.map((pur) => (
+                      <tr key={pur._id} className="hover:bg-marine-card/30 transition-colors">
+                        <td className="p-4 text-slate-300 font-mono text-xs">
+                          {pur.purchaseDate ? new Date(pur.purchaseDate).toLocaleDateString('en-IN') : 'N/A'}
+                        </td>
+                        <td className="p-4 font-mono font-semibold text-sky-400 text-xs">
+                          {pur.invoiceNumber || '—'}
+                        </td>
+                        <td className="p-4 font-semibold text-white">{pur.productName}</td>
+                        <td className="p-4 font-bold text-emerald-400">+{pur.quantity} units</td>
+                        <td className="p-4 text-slate-300">{pur.supplierName || 'Self / Plant'}</td>
+                        <td className="p-4 font-medium text-slate-300">Rs. {pur.unitCost || 0}</td>
+                        <td className="p-4 font-bold text-white">Rs. {Number(pur.totalAmount || 0).toLocaleString('en-IN')}</td>
+                        <td className="p-4 text-xs text-slate-400 max-w-[150px] truncate" title={pur.notes}>
+                          {pur.notes || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                    {purchases.length === 0 && (
+                      <tr>
+                        <td colSpan="8" className="p-8 text-center text-sm text-slate-500">
+                          No purchases recorded yet. Click "+ Record New Purchase" to log inward stock.
                         </td>
                       </tr>
                     )}
@@ -2663,6 +2961,174 @@ const VendorDashboard = () => {
                   className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm rounded-lg cursor-pointer"
                 >
                   {isStockUpdateOnly ? 'Add Stock' : 'Save Product'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RECORD PURCHASE / STOCK INWARD */}
+      {showPurchaseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-lg max-h-[calc(100dvh_-_2rem)] overflow-y-auto glass-panel-glow rounded-2xl p-6 border border-emerald-500/30">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <ShoppingBag size={20} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white leading-tight">Record Stock Purchase</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Inward stock will automatically be added to product available inventory.</p>
+              </div>
+            </div>
+
+            {error && (
+              <div className="p-3 mb-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleRecordPurchase} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Select Product to Restock *</label>
+                <select
+                  required
+                  value={purchaseProdId}
+                  onChange={(e) => setPurchaseProdId(e.target.value)}
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                >
+                  <option value="">-- Choose a Product --</option>
+                  {products.map((p) => (
+                    <option key={p._id} value={p._id}>
+                      {p.name} ({p.quantity || 'Standard'}) — Current stock: {p.stock || 0}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Quantity (Units) *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    required
+                    value={purchaseQty}
+                    onChange={(e) => {
+                      const q = e.target.value;
+                      setPurchaseQty(q);
+                      if (purchaseUnitCost && Number(purchaseUnitCost) > 0) {
+                        setPurchaseTotalAmount(String(Number(purchaseUnitCost) * Number(q)));
+                      }
+                    }}
+                    placeholder="e.g. 50"
+                    className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Unit Cost (Rs) [Optional]</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={purchaseUnitCost}
+                    onChange={(e) => {
+                      const cost = e.target.value;
+                      setPurchaseUnitCost(cost);
+                      if (purchaseQty && Number(purchaseQty) > 0) {
+                        setPurchaseTotalAmount(String(Number(cost) * Number(purchaseQty)));
+                      }
+                    }}
+                    placeholder="e.g. 40"
+                    className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Total Amount (Rs)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={purchaseTotalAmount}
+                    onChange={(e) => setPurchaseTotalAmount(e.target.value)}
+                    placeholder="e.g. 2000"
+                    className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Supplier / Factory Name</label>
+                  <input
+                    type="text"
+                    value={purchaseSupplier}
+                    onChange={(e) => setPurchaseSupplier(e.target.value)}
+                    placeholder="e.g. Himalayan Springs Plant"
+                    className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Invoice / Bill Number</label>
+                  <input
+                    type="text"
+                    value={purchaseInvoice}
+                    onChange={(e) => setPurchaseInvoice(e.target.value)}
+                    placeholder="e.g. INV-2026-089"
+                    className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Purchase Date</label>
+                  <input
+                    type="date"
+                    value={purchaseDate}
+                    onChange={(e) => setPurchaseDate(e.target.value)}
+                    className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Notes / Truck Details</label>
+                <input
+                  type="text"
+                  value={purchaseNotes}
+                  onChange={(e) => setPurchaseNotes(e.target.value)}
+                  placeholder="e.g. Received via Vehicle WB-04-1234, 50 jars intact"
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setSuccess('');
+                    setShowPurchaseModal(false);
+                    setPurchaseProdId('');
+                    setPurchaseQty('');
+                    setPurchaseSupplier('');
+                    setPurchaseUnitCost('');
+                    setPurchaseTotalAmount('');
+                    setPurchaseInvoice('');
+                    setPurchaseNotes('');
+                    setPurchaseDate('');
+                  }}
+                  className="flex-1 py-2.5 border border-marine-850 rounded-lg text-slate-400 font-semibold text-sm hover:bg-marine-card cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm rounded-lg cursor-pointer transition-colors shadow-md shadow-emerald-950/30"
+                >
+                  Confirm &amp; Add Stock
                 </button>
               </div>
             </form>

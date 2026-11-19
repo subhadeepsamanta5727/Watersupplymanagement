@@ -44,6 +44,7 @@ app.use('/api/v1/agent', require('./routes/agent'));
 app.use('/api/v1/customer', require('./routes/customer'));
 app.use('/api/v1/orders', require('./routes/orders'));
 app.use('/api/v1/payment', require('./routes/payment'));
+app.use('/api/v1/purchases', require('./routes/purchases'));
 
 // Health check endpoints
 app.get('/', (req, res) => {
