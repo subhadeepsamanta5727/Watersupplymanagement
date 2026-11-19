@@ -46,6 +46,8 @@ const VendorDashboard = () => {
   const [prodName, setProdName] = useState('');
   const [prodPrice, setProdPrice] = useState('');
   const [prodPurchasePrice, setProdPurchasePrice] = useState('');
+  const [prodIsReturnable, setProdIsReturnable] = useState(true);
+  const [prodSecurityDeposit, setProdSecurityDeposit] = useState('');
   const [prodDesc, setProdDesc] = useState('');
   const [prodQty, setProdQty] = useState('');
   const [prodStock, setProdStock] = useState('');
@@ -56,6 +58,18 @@ const VendorDashboard = () => {
   const [showCustomPriceModal, setShowCustomPriceModal] = useState(false);
   const [selectedCustomerForPricing, setSelectedCustomerForPricing] = useState(null);
   const [customerCustomPrices, setCustomerCustomPrices] = useState({});
+
+  // Form states - Damaged Jar & Security Deposit Refund
+  const [showDamageJarModal, setShowDamageJarModal] = useState(false);
+  const [showRefundDepositModal, setShowRefundDepositModal] = useState(false);
+  const [selectedCustForDamage, setSelectedCustForDamage] = useState(null);
+  const [damageJarCount, setDamageJarCount] = useState(1);
+  const [damagePenaltyAmount, setDamagePenaltyAmount] = useState('');
+  const [damageDeductDeposit, setDamageDeductDeposit] = useState(false);
+  const [damageNotes, setDamageNotes] = useState('');
+  const [refundDepositAmount, setRefundDepositAmount] = useState('');
+  const [refundAdjustBalance, setRefundAdjustBalance] = useState(false);
+  const [refundNotes, setRefundNotes] = useState('');
 
   // Analytics states - Profit & Loss
   const [profitLossData, setProfitLossData] = useState(null);
@@ -291,6 +305,8 @@ const VendorDashboard = () => {
         name: prodName,
         price: Number(prodPrice),
         purchasePrice: prodPurchasePrice !== '' ? Number(prodPurchasePrice) : 0,
+        isReturnable: Boolean(prodIsReturnable),
+        securityDeposit: prodIsReturnable && prodSecurityDeposit !== '' ? Number(prodSecurityDeposit) : 0,
         description: prodDesc,
         quantity: prodQty
       };
@@ -318,6 +334,8 @@ const VendorDashboard = () => {
         setProdName('');
         setProdPrice('');
         setProdPurchasePrice('');
+        setProdIsReturnable(true);
+        setProdSecurityDeposit('');
         setProdDesc('');
         setProdQty('');
         setProdStock('');
@@ -395,6 +413,101 @@ const VendorDashboard = () => {
       }
     } catch (err) {
       setError('Connection failure while saving custom prices');
+    }
+  };
+
+  // Damaged Jar & Penalty Handlers
+  const handleOpenDamageModal = (customer) => {
+    setError('');
+    setSuccess('');
+    setSelectedCustForDamage(customer);
+    setDamageJarCount(1);
+    setDamagePenaltyAmount('');
+    setDamageDeductDeposit(false);
+    setDamageNotes('');
+    setShowDamageJarModal(true);
+  };
+
+  const handleSubmitDamage = async (e) => {
+    e.preventDefault();
+    if (!selectedCustForDamage) return;
+    setError('');
+    setSuccess('');
+
+    const count = Number(damageJarCount);
+    if (!Number.isInteger(count) || count <= 0) {
+      return setError('Please enter a valid whole number of damaged jars.');
+    }
+    if (count > selectedCustForDamage.bottlesOutstanding) {
+      return setError(`Cannot exceed customer's pending jars (${selectedCustForDamage.bottlesOutstanding}).`);
+    }
+
+    try {
+      const res = await authFetch(`/vendor/customers/${selectedCustForDamage.customerId}/damage`, {
+        method: 'POST',
+        body: JSON.stringify({
+          jarCount: count,
+          penaltyAmount: damagePenaltyAmount !== '' ? Number(damagePenaltyAmount) : 0,
+          notes: damageNotes,
+          deductFromDeposit: damageDeductDeposit
+        })
+      });
+
+      if (res.success) {
+        setSuccess(res.message || 'Damaged jar write-off recorded successfully.');
+        setShowDamageJarModal(false);
+        setSelectedCustForDamage(null);
+        fetchData();
+      } else {
+        setError(res.message || 'Failed to record damaged jar.');
+      }
+    } catch (err) {
+      setError('Connection failure while recording damaged jar.');
+    }
+  };
+
+  // Security Deposit Refund Handlers
+  const handleOpenRefundModal = (customer) => {
+    setError('');
+    setSuccess('');
+    setSelectedCustForDamage(customer);
+    setRefundDepositAmount(customer.securityDeposit || '');
+    setRefundAdjustBalance(false);
+    setRefundNotes('');
+    setShowRefundDepositModal(true);
+  };
+
+  const handleSubmitRefund = async (e) => {
+    e.preventDefault();
+    if (!selectedCustForDamage) return;
+    setError('');
+    setSuccess('');
+
+    const amt = Number(refundDepositAmount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      return setError('Please enter a valid refund amount.');
+    }
+
+    try {
+      const res = await authFetch(`/vendor/customers/${selectedCustForDamage.customerId}/refund-deposit`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: amt,
+          adjustWithBalance: refundAdjustBalance,
+          notes: refundNotes
+        })
+      });
+
+      if (res.success) {
+        setSuccess(res.message || 'Security deposit refund processed successfully.');
+        setShowRefundDepositModal(false);
+        setSelectedCustForDamage(null);
+        fetchData();
+      } else {
+        setError(res.message || 'Failed to process deposit refund.');
+      }
+    } catch (err) {
+      setError('Connection failure while processing deposit refund.');
     }
   };
 
@@ -1769,6 +1882,8 @@ const VendorDashboard = () => {
                   setProdName('');
                   setProdPrice('');
                   setProdPurchasePrice('');
+                  setProdIsReturnable(true);
+                  setProdSecurityDeposit('');
                   setProdDesc('');
                   setProdQty('');
                   setIsStockUpdateOnly(false);
@@ -1783,10 +1898,11 @@ const VendorDashboard = () => {
 
             <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[750px] border-collapse text-left">
+                <table className="w-full min-w-[850px] border-collapse text-left">
                   <thead>
                     <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
                       <th className="p-4">Product Name</th>
+                      <th className="p-4">Container Type</th>
                       <th className="p-4">Size / Volume</th>
                       <th className="p-4">Purchase Cost</th>
                       <th className="p-4">Selling Price</th>
@@ -1803,6 +1919,22 @@ const VendorDashboard = () => {
                           <div className="mt-0.5 max-w-xs truncate text-xs text-slate-400" title={prod.description}>
                             {prod.description || 'No description'}
                           </div>
+                        </td>
+                        <td className="p-4">
+                          {prod.isReturnable !== false ? (
+                            <div>
+                              <span className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                                Returnable Jar
+                              </span>
+                              {Number(prod.securityDeposit || 0) > 0 && (
+                                <div className="text-[10px] text-amber-400 mt-0.5">Deposit: Rs. {prod.securityDeposit}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                              Consumable / Normal
+                            </span>
+                          )}
                         </td>
                         <td className="p-4 text-slate-300 font-medium">{prod.quantity || 'Standard'}</td>
                         <td className="p-4 text-amber-400 font-medium">Rs. {prod.purchasePrice || 0}</td>
@@ -1830,6 +1962,8 @@ const VendorDashboard = () => {
                                 setProdName(prod.name);
                                 setProdPrice(prod.price);
                                 setProdPurchasePrice(prod.purchasePrice !== undefined ? prod.purchasePrice : '');
+                                setProdIsReturnable(prod.isReturnable !== false);
+                                setProdSecurityDeposit(prod.securityDeposit !== undefined ? prod.securityDeposit : '');
                                 setProdDesc(prod.description || '');
                                 setProdQty(prod.quantity || '');
                                 setProdStock(prod.stock || '');
@@ -1852,7 +1986,7 @@ const VendorDashboard = () => {
                     ))}
                     {products.length === 0 && (
                       <tr>
-                        <td colSpan="7" className="p-8 text-center text-sm text-slate-500">
+                        <td colSpan="8" className="p-8 text-center text-sm text-slate-500">
                           No products added yet. Click Add New Product to start.
                         </td>
                       </tr>
@@ -2459,10 +2593,34 @@ const VendorDashboard = () => {
                           ) : (
                             <span className="text-slate-500">Nil</span>
                           )}
+                          {cust.securityDeposit > 0 && (
+                            <div className="text-[11px] font-medium text-amber-300 mt-1 flex items-center gap-1.5">
+                              <span>Deposit: Rs. {cust.securityDeposit}</span>
+                              <button
+                                onClick={() => handleOpenRefundModal(cust)}
+                                className="underline hover:text-amber-200 cursor-pointer text-[10px]"
+                                title="Refund security deposit"
+                              >
+                                Refund
+                              </button>
+                            </div>
+                          )}
                         </td>
                         <td className="p-4 font-bold">
                           {cust.bottlesOutstanding > 0 ? (
-                            <span className="text-teal-400">{cust.bottlesOutstanding} Jars</span>
+                            <div>
+                              <span className="text-teal-400">{cust.bottlesOutstanding} Jars</span>
+                              <div>
+                                <button
+                                  onClick={() => handleOpenDamageModal(cust)}
+                                  className="inline-flex items-center gap-1 text-[10px] text-rose-400 hover:text-rose-300 mt-1 cursor-pointer font-semibold"
+                                  title="Report broken or lost jar"
+                                >
+                                  <AlertTriangle size={10} />
+                                  Report Damage
+                                </button>
+                              </div>
+                            </div>
                           ) : (
                             <span className="text-slate-500">All Returned</span>
                           )}
@@ -2494,6 +2652,15 @@ const VendorDashboard = () => {
                             >
                               <Tag size={14} />
                               Rates
+                            </button>
+                            <button
+                              onClick={() => handleOpenDamageModal(cust)}
+                              disabled={!cust.bottlesOutstanding || cust.bottlesOutstanding <= 0}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600 border border-rose-500/20 hover:border-rose-500 text-rose-400 hover:text-white text-xs font-semibold rounded cursor-pointer transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Report lost / broken jar with penalty"
+                            >
+                              <AlertTriangle size={14} />
+                              Damage
                             </button>
                             <button
                               onClick={() => handleOpenCustomerPayment(cust)}
@@ -3346,6 +3513,42 @@ const VendorDashboard = () => {
                       </span>
                     </div>
                   )}
+                  <div className="rounded-lg border border-marine-800 bg-marine-950/60 p-3 space-y-3">
+                    <label className="flex items-center gap-2.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={prodIsReturnable}
+                        onChange={(e) => setProdIsReturnable(e.target.checked)}
+                        className="w-4 h-4 rounded text-sky-600 bg-marine-900 border-marine-700 focus:ring-0 focus:outline-none"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-white block">Returnable Jar Container</span>
+                        <span className="text-[11px] text-slate-400 block">
+                          Tracks empty jar collections and return balances. Uncheck for disposable/consumable bottles.
+                        </span>
+                      </div>
+                    </label>
+
+                    {prodIsReturnable && (
+                      <div className="pt-2 border-t border-marine-800/80">
+                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-1.5">
+                          Refundable Security Deposit per Jar (Rs)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={prodSecurityDeposit}
+                          onChange={(e) => setProdSecurityDeposit(e.target.value)}
+                          placeholder="e.g. 150 (charged only on customer's first order)"
+                          className="w-full bg-marine-900 border border-marine-700 rounded-lg p-2 text-sm text-white focus:outline-none focus:border-sky-500"
+                        />
+                        <span className="text-[10px] text-slate-500 mt-1 block">
+                          Only charged on the customer's first returnable order with your business.
+                        </span>
+                      </div>
+                    )}
+                  </div>
                   <div className="rounded-lg border border-marine-800 bg-marine-950/60 p-3">
                     <span className="block text-xs font-semibold uppercase text-slate-400">Availability Status</span>
                     <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getStockStatus(editingProduct?.stock).className}`}>
@@ -4100,6 +4303,227 @@ const VendorDashboard = () => {
                   className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold text-sm rounded-lg cursor-pointer transition-colors shadow-md shadow-amber-950/30 disabled:opacity-50"
                 >
                   Save Custom Rates
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: REPORT DAMAGED / LOST JAR */}
+      {showDamageJarModal && selectedCustForDamage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-md max-h-[calc(100dvh_-_2rem)] overflow-y-auto glass-panel-glow rounded-2xl p-6 border border-rose-500/30 animate-scale-up">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <AlertTriangle className="text-rose-400" size={20} />
+                  Report Broken / Lost Jar
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Customer: <span className="text-white font-semibold">{selectedCustForDamage.name}</span> ({selectedCustForDamage.phone})
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowDamageJarModal(false); setSelectedCustForDamage(null); }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-marine-800 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3 mb-4 rounded-lg bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 leading-relaxed">
+              Writing off a broken or lost jar reduces the customer's pending jars. You can add a penalty / replacement fee to be charged to the customer.
+            </div>
+
+            {error && (
+              <div className="p-3 mb-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitDamage} className="space-y-4">
+              <div className="p-3 rounded-lg bg-marine-950/60 border border-marine-800 text-xs flex justify-between items-center">
+                <span className="text-slate-400">Total Pending Jars with Customer:</span>
+                <span className="font-bold text-teal-400 text-sm">{selectedCustForDamage.bottlesOutstanding} Jars</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Number of Jars Damaged / Lost</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={selectedCustForDamage.bottlesOutstanding}
+                  required
+                  value={damageJarCount}
+                  onChange={(e) => setDamageJarCount(e.target.value)}
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">
+                  Damage / Penalty Fee to Charge (Rs)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={damagePenaltyAmount}
+                  onChange={(e) => setDamagePenaltyAmount(e.target.value)}
+                  placeholder="e.g. 150 (enter 0 to waive fee)"
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-rose-500"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  This penalty amount will be added to the customer's unpaid balance.
+                </span>
+              </div>
+
+              {Number(selectedCustForDamage.securityDeposit || 0) > 0 && (
+                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={damageDeductDeposit}
+                      onChange={(e) => setDamageDeductDeposit(e.target.checked)}
+                      className="w-4 h-4 rounded text-amber-600 bg-marine-900 border-marine-700"
+                    />
+                    <span className="text-xs text-amber-200">
+                      Deduct penalty from held Security Deposit (Rs. {selectedCustForDamage.securityDeposit}) instead of adding to bill
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Reason / Note</label>
+                <input
+                  type="text"
+                  value={damageNotes}
+                  onChange={(e) => setDamageNotes(e.target.value)}
+                  placeholder="e.g. Broken jar base, damaged on site"
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDamageJarModal(false);
+                    setSelectedCustForDamage(null);
+                  }}
+                  className="flex-1 py-2.5 border border-marine-850 rounded-lg text-slate-400 font-semibold text-sm hover:bg-marine-card cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm rounded-lg cursor-pointer transition-colors shadow-md shadow-rose-950/30"
+                >
+                  Write Off &amp; Apply Penalty
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: REFUND SECURITY DEPOSIT */}
+      {showRefundDepositModal && selectedCustForDamage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-md max-h-[calc(100dvh_-_2rem)] overflow-y-auto glass-panel-glow rounded-2xl p-6 border border-sky-500/30 animate-scale-up">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <IndianRupee className="text-sky-400" size={20} />
+                  Refund Security Deposit
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Customer: <span className="text-white font-semibold">{selectedCustForDamage.name}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowRefundDepositModal(false); setSelectedCustForDamage(null); }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-marine-800 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3 mb-4 rounded-lg bg-sky-500/10 border border-sky-500/20 text-xs text-sky-300 leading-relaxed">
+              Process refund for the customer's returnable jar deposit when they return containers or close their account.
+            </div>
+
+            {error && (
+              <div className="p-3 mb-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitRefund} className="space-y-4">
+              <div className="p-3 rounded-lg bg-marine-950/60 border border-marine-800 text-xs flex justify-between items-center">
+                <span className="text-slate-400">Total Deposit Held:</span>
+                <span className="font-bold text-amber-400 text-sm">Rs. {selectedCustForDamage.securityDeposit || 0}</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Refund Amount (Rs)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max={selectedCustForDamage.securityDeposit || 0}
+                  step="any"
+                  required
+                  value={refundDepositAmount}
+                  onChange={(e) => setRefundDepositAmount(e.target.value)}
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              {Number(selectedCustForDamage.balance || 0) > 0 && (
+                <div className="p-3 rounded-lg bg-marine-950/60 border border-marine-800">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={refundAdjustBalance}
+                      onChange={(e) => setRefundAdjustBalance(e.target.checked)}
+                      className="w-4 h-4 rounded text-sky-600 bg-marine-900 border-marine-700"
+                    />
+                    <span className="text-xs text-slate-300">
+                      Adjust refund against customer's pending unpaid bill of Rs. {selectedCustForDamage.balance}
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Note / Transaction Details</label>
+                <input
+                  type="text"
+                  value={refundNotes}
+                  onChange={(e) => setRefundNotes(e.target.value)}
+                  placeholder="e.g. Returned all jars, refunded via Cash / UPI"
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRefundDepositModal(false);
+                    setSelectedCustForDamage(null);
+                  }}
+                  className="flex-1 py-2.5 border border-marine-850 rounded-lg text-slate-400 font-semibold text-sm hover:bg-marine-card cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm rounded-lg cursor-pointer transition-colors shadow-md shadow-sky-950/30"
+                >
+                  Process Refund
                 </button>
               </div>
             </form>

@@ -171,9 +171,22 @@ exports.createOrder = async (req, res) => {
             ? Number(item.deliveredQuantity)
             : undefined,
           price: unitSellPrice,
-          purchasePrice: unitCostPrice
+          purchasePrice: unitCostPrice,
+          isReturnable: dbProduct.isReturnable !== false
         };
       });
+
+      // Calculate security deposit if this is customer's first returnable jar order
+      let depositCharged = 0;
+      const isFirstReturnableOrder = !relation.hasOrderedReturnable;
+      if (isFirstReturnableOrder) {
+        for (const item of products) {
+          const dbProduct = productById.get(item.productId.toString());
+          if (dbProduct && dbProduct.isReturnable !== false && Number(dbProduct.securityDeposit) > 0) {
+            depositCharged += Number(dbProduct.securityDeposit) * Number(item.quantity);
+          }
+        }
+      }
 
       let deliveredQuantities = orderStatus === 'delivered'
         ? allocateDeliveredQuantities(orderProducts, declaredDelivered)
@@ -188,8 +201,9 @@ exports.createOrder = async (req, res) => {
       orderProducts.forEach((item, index) => {
         item.deliveredQuantity = deliveredQuantities[index];
       });
-      const totalAmount = orderProducts.reduce((sum, item) =>
+      const waterTotal = orderProducts.reduce((sum, item) =>
         sum + item.price * (orderStatus === 'delivered' ? item.deliveredQuantity : item.quantity), 0);
+      const totalAmount = waterTotal + depositCharged;
       const finalDeliveryAddress = (deliveryAddress && deliveryAddress.trim()) || customerUser.address || '';
 
       if (!isVendor && saveToProfile && deliveryAddress && deliveryAddress.trim()) {
@@ -209,6 +223,7 @@ exports.createOrder = async (req, res) => {
         vendorId,
         customerId: resolvedCustomerId,
         products: orderProducts,
+        securityDepositCharged: depositCharged,
         totalAmount,
         bottlesDelivered: finalDelivered,
         bottlesReturned: finalReturned,
@@ -218,6 +233,13 @@ exports.createOrder = async (req, res) => {
         deliveryDate: orderStatus === 'delivered' ? new Date() : null
       });
       await order.save({ session });
+
+      if (depositCharged > 0) {
+        relation.securityDeposit = (relation.securityDeposit || 0) + depositCharged;
+      }
+      if (orderProducts.some((p) => p.isReturnable !== false)) {
+        relation.hasOrderedReturnable = true;
+      }
 
       if (orderStatus === 'pending') {
         // Reserve stock immediately: deduct from stock, add to pendingDeliveryStock
@@ -238,8 +260,11 @@ exports.createOrder = async (req, res) => {
           );
         }
       } else if (orderStatus === 'delivered') {
+        const returnableDelivered = orderProducts
+          .filter((item) => item.isReturnable !== false)
+          .reduce((sum, item) => sum + (item.deliveredQuantity !== undefined ? item.deliveredQuantity : item.quantity), 0);
         relation.balance += totalAmount;
-        relation.bottlesOutstanding += finalDelivered - finalReturned;
+        relation.bottlesOutstanding += returnableDelivered - finalReturned;
         await relation.save({ session });
 
         // Immediate walk-in delivery: deduct directly from stock
@@ -329,6 +354,7 @@ exports.updateOrderStatus = async (req, res) => {
           requestedQuantity: getRequestedQuantity(item),
           price: item.price,
           purchasePrice: item.purchasePrice || 0,
+          isReturnable: item.isReturnable !== false,
           deliveredQuantity: undefined
         }));
 
@@ -385,14 +411,17 @@ exports.updateOrderStatus = async (req, res) => {
         order.totalAmount = order.products.reduce(
           (sum, item) => sum + item.price * item.deliveredQuantity,
           0
-        );
+        ) + (order.securityDepositCharged || 0);
         order.bottlesDelivered = totalDelivered;
         order.bottlesReturned = totalReturned;
         order.status = 'delivered';
         order.deliveryDate = new Date();
 
+        const returnableDelivered = order.products
+          .filter((item) => item.isReturnable !== false)
+          .reduce((sum, item) => sum + Number(item.deliveredQuantity || 0), 0);
         relation.balance += order.totalAmount;
-        relation.bottlesOutstanding += totalDelivered - totalReturned;
+        relation.bottlesOutstanding += returnableDelivered - totalReturned;
 
         for (const item of order.products) {
           const requestedQty = getRequestedQuantity(item);

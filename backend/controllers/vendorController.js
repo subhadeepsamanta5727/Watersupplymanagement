@@ -8,6 +8,7 @@ const Product = require('../models/Product');
 const VendorCustomer = require('../models/VendorCustomer');
 const VendorSubscription = require('../models/VendorSubscription');
 const Purchase = require('../models/Purchase');
+const JarActivity = require('../models/JarActivity');
 const { parsePagination } = require('../utils/pagination');
 const { getIndiaDayBounds } = require('../utils/indiaDate');
 
@@ -52,7 +53,7 @@ exports.getSubscription = async (req, res) => {
 // @access  Private (Vendor only)
 exports.addProduct = async (req, res) => {
   try {
-    const { name, price, purchasePrice, description, imageUrl, quantity, stock } = req.body;
+    const { name, price, purchasePrice, isReturnable, securityDeposit, description, imageUrl, quantity, stock } = req.body;
 
     if (!name || price === undefined) {
       return res.status(400).json({ success: false, message: 'Please provide name and price' });
@@ -73,6 +74,8 @@ exports.addProduct = async (req, res) => {
       name,
       price: Number(price),
       purchasePrice: purchasePrice !== undefined ? Number(purchasePrice) : 0,
+      isReturnable: isReturnable !== undefined ? Boolean(isReturnable) : true,
+      securityDeposit: securityDeposit !== undefined ? Math.max(0, Number(securityDeposit)) : 0,
       description,
       quantity: quantity || '',
       stock: initialStock,
@@ -139,10 +142,12 @@ exports.updateProduct = async (req, res) => {
     }
 
     const updateData = {};
-    for (const field of ['name', 'price', 'purchasePrice', 'description', 'imageUrl', 'quantity']) {
+    for (const field of ['name', 'price', 'purchasePrice', 'isReturnable', 'securityDeposit', 'description', 'imageUrl', 'quantity']) {
       if (req.body[field] !== undefined) {
-        if (field === 'price' || field === 'purchasePrice') {
-          updateData[field] = Number(req.body[field]);
+        if (field === 'price' || field === 'purchasePrice' || field === 'securityDeposit') {
+          updateData[field] = Math.max(0, Number(req.body[field]));
+        } else if (field === 'isReturnable') {
+          updateData[field] = Boolean(req.body[field]);
         } else {
           updateData[field] = req.body[field];
         }
@@ -316,6 +321,8 @@ exports.getCustomers = async (req, res) => {
         address: cust?.address || 'N/A',
         bottlesOutstanding: rel.bottlesOutstanding,
         balance: rel.balance,
+        securityDeposit: rel.securityDeposit || 0,
+        hasOrderedReturnable: !!rel.hasOrderedReturnable,
         customPrices: rel.customPrices || [],
         createdAt: rel.createdAt
       };
@@ -863,6 +870,142 @@ exports.updateCustomerCustomPrices = async (req, res) => {
         relationId: relation._id,
         customerId: relation.customerId,
         customPrices: relation.customPrices
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Report broken / damaged / lost jar with vendor penalty
+// @route   POST /api/v1/vendor/customers/:customerId/damage
+// @access  Private (Vendor only)
+exports.reportJarDamage = async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    const { jarCount, penaltyAmount, notes, deductFromDeposit } = req.body;
+    const vendorId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(customerId)) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID' });
+    }
+
+    const relation = await VendorCustomer.findOne({ vendorId, customerId });
+    if (!relation) {
+      return res.status(404).json({ success: false, message: 'Customer relationship not found' });
+    }
+
+    const count = Number(jarCount);
+    if (!Number.isInteger(count) || count <= 0) {
+      return res.status(400).json({ success: false, message: 'Damaged jar count must be a positive whole number' });
+    }
+
+    if (count > relation.bottlesOutstanding) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot write off ${count} jars. Customer only has ${relation.bottlesOutstanding} jars pending.`
+      });
+    }
+
+    const penalty = Number(penaltyAmount !== undefined ? penaltyAmount : 0);
+    if (isNaN(penalty) || penalty < 0) {
+      return res.status(400).json({ success: false, message: 'Penalty amount must be a non-negative number' });
+    }
+
+    // Reduce bottles outstanding
+    relation.bottlesOutstanding -= count;
+
+    let actuallyDeductedFromDeposit = false;
+    if (deductFromDeposit && relation.securityDeposit >= penalty) {
+      relation.securityDeposit -= penalty;
+      actuallyDeductedFromDeposit = true;
+    } else {
+      relation.balance += penalty;
+    }
+
+    await relation.save();
+
+    const activity = await JarActivity.create({
+      vendorId,
+      customerId,
+      type: 'damage_penalty',
+      jarCount: count,
+      amount: penalty,
+      deductedFromDeposit: actuallyDeductedFromDeposit,
+      notes: (notes || '').trim()
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Recorded ${count} damaged jar(s) with Rs. ${penalty} penalty.`,
+      data: {
+        relationId: relation._id,
+        customerId: relation.customerId,
+        bottlesOutstanding: relation.bottlesOutstanding,
+        balance: relation.balance,
+        securityDeposit: relation.securityDeposit,
+        activity
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Refund security deposit to customer
+// @route   POST /api/v1/vendor/customers/:customerId/refund-deposit
+// @access  Private (Vendor only)
+exports.refundSecurityDeposit = async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    const { amount, adjustWithBalance, notes } = req.body;
+    const vendorId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(customerId)) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID' });
+    }
+
+    const relation = await VendorCustomer.findOne({ vendorId, customerId });
+    if (!relation) {
+      return res.status(404).json({ success: false, message: 'Customer relationship not found' });
+    }
+
+    const refundAmount = Number(amount);
+    if (isNaN(refundAmount) || refundAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Refund amount must be greater than 0' });
+    }
+
+    if (refundAmount > (relation.securityDeposit || 0)) {
+      return res.status(400).json({
+        success: false,
+        message: `Refund amount cannot exceed held deposit of Rs. ${relation.securityDeposit || 0}`
+      });
+    }
+
+    relation.securityDeposit -= refundAmount;
+    if (adjustWithBalance) {
+      relation.balance -= refundAmount;
+    }
+
+    await relation.save();
+
+    const activity = await JarActivity.create({
+      vendorId,
+      customerId,
+      type: 'deposit_refund',
+      amount: refundAmount,
+      notes: notes || (adjustWithBalance ? 'Adjusted with outstanding balance' : 'Refunded to customer')
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully processed Rs. ${refundAmount} deposit refund.`,
+      data: {
+        relationId: relation._id,
+        customerId: relation.customerId,
+        securityDeposit: relation.securityDeposit,
+        balance: relation.balance,
+        activity
       }
     });
   } catch (error) {

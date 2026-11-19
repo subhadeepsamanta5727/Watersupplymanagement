@@ -53,8 +53,17 @@ const orderSchema = new mongoose.Schema({
       type: Number,
       default: 0,
       min: 0
+    },
+    isReturnable: {
+      type: Boolean,
+      default: true
     }
   }],
+  securityDepositCharged: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   totalAmount: {
     type: Number,
     required: true,

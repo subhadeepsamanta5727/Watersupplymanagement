@@ -17,7 +17,9 @@ const {
   submitAgentCollection,
   submitAgentJars,
   updateCustomerCustomPrices,
-  getProfitLossAnalytics
+  getProfitLossAnalytics,
+  reportJarDamage,
+  refundSecurityDeposit
 } = require('../controllers/vendorController');
 const { protect, authorize, checkSubscription } = require('../middleware/auth');
 
@@ -33,6 +35,8 @@ router.post('/customers', checkSubscription, addCustomer);
 router.get('/customers', getCustomers);
 router.put('/customers/:customerId', checkSubscription, updateCustomerLedger);
 router.put('/customers/:customerId/custom-prices', checkSubscription, updateCustomerCustomPrices);
+router.post('/customers/:customerId/damage', checkSubscription, reportJarDamage);
+router.post('/customers/:customerId/refund-deposit', checkSubscription, refundSecurityDeposit);
 router.get('/profit-loss', getProfitLossAnalytics);
 router.put('/profile', updateProfile);
 router.get('/agents', getAgents);

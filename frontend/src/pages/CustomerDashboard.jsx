@@ -788,7 +788,7 @@ const CustomerDashboard = () => {
               </div>
 
               {/* Stats row */}
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className={`grid grid-cols-2 ${vendorDetails?.securityDeposit > 0 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
                 {/* Balance card */}
                 <div className="cp-stat-card cp-glass rounded-2xl p-4 col-span-2 lg:col-span-1">
                   <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -827,6 +827,23 @@ const CustomerDashboard = () => {
                     </>
                   )}
                 </div>
+
+                {/* Security deposit held */}
+                {vendorDetails?.securityDeposit > 0 && (
+                  <div className="cp-stat-card cp-glass rounded-2xl p-4">
+                    <div className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                      <ShieldAlert size={11} className="text-teal-400" /> Security Deposit
+                    </div>
+                    {loading ? <Skeleton className="h-9 w-20 mt-1" /> : (
+                      <>
+                        <div className="text-3xl font-extrabold text-teal-400">
+                          ₹{vendorDetails.securityDeposit}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">refundable held</div>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {/* Total orders */}
                 <div className="cp-stat-card cp-glass rounded-2xl p-4">
@@ -871,12 +888,23 @@ const CustomerDashboard = () => {
                               <Droplet size={20} className="text-cyan-400" />
                             </div>
                             <div className="flex flex-col items-end gap-1">
-                              {prod.quantity && (
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold text-violet-400 shrink-0"
-                                  style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.2)' }}>
-                                  {prod.quantity}
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {prod.quantity && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-violet-400 shrink-0"
+                                    style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.2)' }}>
+                                    {prod.quantity}
+                                  </span>
+                                )}
+                                {prod.isReturnable === false ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold text-slate-300 bg-slate-800 border border-slate-700">
+                                    Consumable
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-semibold text-cyan-300 bg-cyan-950/60 border border-cyan-700/40">
+                                    Returnable Jar
+                                  </span>
+                                )}
+                              </div>
                               {Number(prod.stock || 0) <= 0 ? (
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/25">
                                   Out of Stock
@@ -908,6 +936,11 @@ const CustomerDashboard = () => {
                             </div>
                             {prod.isCustomPrice && (
                               <div className="text-[10px] font-semibold text-emerald-400">Special Rate</div>
+                            )}
+                            {!vendorDetails?.hasOrderedReturnable && prod.isReturnable !== false && Number(prod.securityDeposit) > 0 && (
+                              <div className="text-[10px] font-semibold text-teal-400">
+                                + ₹{prod.securityDeposit} deposit (1st order)
+                              </div>
                             )}
                           </div>
                           <button
@@ -991,6 +1024,9 @@ const CustomerDashboard = () => {
                           )}
                           <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
                             <span>Amount: <span className="text-white font-semibold">₹{ord.totalAmount}</span></span>
+                            {ord.securityDepositCharged > 0 && (
+                              <span className="text-teal-400 font-semibold text-[11px]">(incl. ₹{ord.securityDepositCharged} deposit)</span>
+                            )}
                             {ord.status === 'delivered' && (
                               <span>Del: {ord.bottlesDelivered} | Ret: {ord.bottlesReturned}</span>
                             )}
@@ -1066,7 +1102,7 @@ const CustomerDashboard = () => {
         open={showRequestModal && !!requestProd}
         onClose={() => { setShowRequestModal(false); setRequestProd(null); setRequestQty(1); }}
         title="Request Delivery"
-        subtitle={requestProd ? `Ordering: ${requestProd.name}` : ''}
+        subtitle={requestProd ? `Ordering: ${requestProd.name}${requestProd.isReturnable === false ? ' (Consumable)' : ' (Returnable Jar)'}` : ''}
         icon={<Send size={22} />}
         accentColor="purple"
       >
@@ -1075,24 +1111,44 @@ const CustomerDashboard = () => {
           <Alert type="success" msg={success} onClose={() => setSuccess('')} />
 
           <div>
-            <label className={labelCls}>Quantity (Jars)</label>
+            <label className={labelCls}>Quantity ({requestProd?.isReturnable === false ? 'Units' : 'Jars'})</label>
             <input type="number" min="1" max={Math.max(1, Number(requestProd?.stock || 1))} required value={requestQty}
               onChange={e => setRequestQty(e.target.value)} className={inputCls} />
             {requestProd?.stock !== undefined && (
               <span className="text-[11px] text-cyan-400 mt-1 block">
-                Available in stock: {requestProd.stock} jars
+                Available in stock: {requestProd.stock} units
               </span>
             )}
           </div>
 
-          <div>
-            <label className={labelCls}>Empty Jars Ready to Return (Optional)</label>
-            <input type="number" min="0" value={requestReturnedJars}
-              onChange={e => setRequestReturnedJars(e.target.value)} className={inputCls} placeholder="0" />
-            <span className="text-[10px] text-slate-400 mt-1 block">
-              Currently outstanding with you: {vendorDetails?.bottlesOutstanding || 0} empty jars
-            </span>
-          </div>
+          {requestProd?.isReturnable === false ? (
+            <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/60 text-xs text-slate-400 flex items-center gap-2">
+              <Package size={14} className="text-slate-400 shrink-0" />
+              <span>Consumable product. No empty jars need to be returned.</span>
+            </div>
+          ) : (
+            <div>
+              <label className={labelCls}>Empty Jars Ready to Return (Optional)</label>
+              <input type="number" min="0" value={requestReturnedJars}
+                onChange={e => setRequestReturnedJars(e.target.value)} className={inputCls} placeholder="0" />
+              <span className="text-[10px] text-slate-400 mt-1 block">
+                Currently outstanding with you: {vendorDetails?.bottlesOutstanding || 0} empty jars
+              </span>
+            </div>
+          )}
+
+          {/* First-order security deposit notice */}
+          {!vendorDetails?.hasOrderedReturnable && requestProd?.isReturnable !== false && Number(requestProd?.securityDeposit) > 0 && (
+            <div className="p-3.5 rounded-xl bg-teal-500/10 border border-teal-500/25 text-xs space-y-1">
+              <div className="flex justify-between font-bold text-teal-300">
+                <span>Refundable Security Deposit (1st Order)</span>
+                <span>+ ₹{Number(requestProd.securityDeposit) * Number(requestQty || 1)}</span>
+              </div>
+              <p className="text-[11px] text-teal-300/80 leading-relaxed">
+                ₹{requestProd.securityDeposit} refundable deposit per jar is charged on your first returnable jar order. Future refills will only cost ₹{requestProd.price}/jar when exchanging empty jars.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className={labelCls}>Preferred Delivery Slot</label>
@@ -1137,16 +1193,27 @@ const CustomerDashboard = () => {
           </div>
 
           {/* Cost preview */}
-          <div className="flex justify-between items-center py-3 px-4 rounded-xl"
-            style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}>
-            <div>
-              <span className="text-xs text-slate-400 block">Estimated cost</span>
-              {requestProd?.isCustomPrice && (
-                <span className="text-[10px] font-semibold text-emerald-400 block">Special Customer Rate Applied</span>
-              )}
-            </div>
-            <span className="font-extrabold text-white text-lg">₹{requestProd ? requestProd.price * requestQty : 0}</span>
-          </div>
+          {(() => {
+            const isFirst = !vendorDetails?.hasOrderedReturnable && requestProd?.isReturnable !== false;
+            const deposit = isFirst ? (Number(requestProd?.securityDeposit) || 0) * Number(requestQty || 1) : 0;
+            const water = requestProd ? Number(requestProd.price) * Number(requestQty || 1) : 0;
+            const total = water + deposit;
+            return (
+              <div className="flex justify-between items-center py-3 px-4 rounded-xl"
+                style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}>
+                <div>
+                  <span className="text-xs text-slate-400 block">Total estimated cost</span>
+                  {requestProd?.isCustomPrice && (
+                    <span className="text-[10px] font-semibold text-emerald-400 block">Special Customer Rate Applied</span>
+                  )}
+                  {deposit > 0 && (
+                    <span className="text-[10px] font-semibold text-teal-400 block">Includes ₹{deposit} refundable deposit</span>
+                  )}
+                </div>
+                <span className="font-extrabold text-white text-lg">₹{total}</span>
+              </div>
+            );
+          })()}
 
           <div className="flex gap-3 pt-2">
             <button type="button" disabled={loading}

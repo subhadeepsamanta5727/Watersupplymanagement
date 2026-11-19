@@ -19,6 +19,15 @@ const vendorCustomerSchema = new mongoose.Schema({
     type: Number,
     default: 0 // Positive: customer owes vendor, Negative: advance payment
   },
+  securityDeposit: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  hasOrderedReturnable: {
+    type: Boolean,
+    default: false
+  },
   customPrices: [{
     productId: {
       type: mongoose.Schema.Types.ObjectId,

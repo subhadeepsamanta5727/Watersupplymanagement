@@ -93,6 +93,8 @@ exports.getVendorDetails = async (req, res) => {
         },
         bottlesOutstanding: relation.bottlesOutstanding,
         balance: relation.balance,
+        securityDeposit: relation.securityDeposit || 0,
+        hasOrderedReturnable: !!relation.hasOrderedReturnable,
         products: tailoredProducts,
         orders,
         payments
