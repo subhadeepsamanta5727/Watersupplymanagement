@@ -7,7 +7,7 @@ import {
   Building, Package, Users, Truck, DollarSign, LogOut, Plus, FileText,
   AlertTriangle, RefreshCw, CheckCircle, Info, Calendar, Download, Menu, X, Settings,
   IndianRupee, Edit, Activity, MapPin, Eye, Clock, ArrowLeft, History,
-  Boxes, ShoppingBag, Layers
+  Boxes, ShoppingBag, Layers, TrendingUp, TrendingDown, Tag, Percent
 } from 'lucide-react';
 
 const getStockStatus = (stock) => {
@@ -45,11 +45,22 @@ const VendorDashboard = () => {
   // Form states - Product
   const [prodName, setProdName] = useState('');
   const [prodPrice, setProdPrice] = useState('');
+  const [prodPurchasePrice, setProdPurchasePrice] = useState('');
   const [prodDesc, setProdDesc] = useState('');
   const [prodQty, setProdQty] = useState('');
   const [prodStock, setProdStock] = useState('');
   const [editingProduct, setEditingProduct] = useState(null);
   const [isStockUpdateOnly, setIsStockUpdateOnly] = useState(false);
+
+  // Form states - Customer Custom Pricing
+  const [showCustomPriceModal, setShowCustomPriceModal] = useState(false);
+  const [selectedCustomerForPricing, setSelectedCustomerForPricing] = useState(null);
+  const [customerCustomPrices, setCustomerCustomPrices] = useState({});
+
+  // Analytics states - Profit & Loss
+  const [profitLossData, setProfitLossData] = useState(null);
+  const [profitLossTimeframe, setProfitLossTimeframe] = useState('all');
+  const [profitLossLoading, setProfitLossLoading] = useState(false);
 
   // Form states - Purchase / Stock Inward
   const [purchaseProdId, setPurchaseProdId] = useState('');
@@ -184,6 +195,26 @@ const VendorDashboard = () => {
     fetchData();
   }, []);
 
+  const fetchProfitLoss = async (tf = profitLossTimeframe) => {
+    setProfitLossLoading(true);
+    try {
+      const res = await authFetch(`/vendor/profit-loss?timeframe=${tf}`);
+      if (res?.success) {
+        setProfitLossData(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to load profit loss data:', err);
+    } finally {
+      setProfitLossLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'profitLoss') {
+      fetchProfitLoss(profitLossTimeframe);
+    }
+  }, [activeTab, profitLossTimeframe]);
+
   useEffect(() => {
     if (user) {
       setProfileName(user.name || '');
@@ -259,6 +290,7 @@ const VendorDashboard = () => {
       const payload = {
         name: prodName,
         price: Number(prodPrice),
+        purchasePrice: prodPurchasePrice !== '' ? Number(prodPurchasePrice) : 0,
         description: prodDesc,
         quantity: prodQty
       };
@@ -285,6 +317,7 @@ const VendorDashboard = () => {
         setSuccess(isStockUpdateOnly ? 'Stock successfully added!' : (editingProduct ? 'Product successfully updated!' : 'Product successfully added!'));
         setProdName('');
         setProdPrice('');
+        setProdPurchasePrice('');
         setProdDesc('');
         setProdQty('');
         setProdStock('');
@@ -314,6 +347,54 @@ const VendorDashboard = () => {
       }
     } catch (err) {
       setError('Connection failure');
+    }
+  };
+
+  // Custom customer pricing handlers
+  const handleOpenCustomPriceModal = (customer) => {
+    setError('');
+    setSuccess('');
+    setSelectedCustomerForPricing(customer);
+    const initialMap = {};
+    (customer.customPrices || []).forEach((cp) => {
+      const pid = cp.productId?._id ? cp.productId._id.toString() : (cp.productId ? cp.productId.toString() : '');
+      if (pid) {
+        initialMap[pid] = cp.price;
+      }
+    });
+    setCustomerCustomPrices(initialMap);
+    setShowCustomPriceModal(true);
+  };
+
+  const handleSaveCustomPrices = async (e) => {
+    e.preventDefault();
+    if (!selectedCustomerForPricing) return;
+    setError('');
+    setSuccess('');
+
+    try {
+      const customPricesArray = Object.entries(customerCustomPrices)
+        .filter(([_, price]) => price !== '' && !isNaN(Number(price)) && Number(price) >= 0)
+        .map(([productId, price]) => ({
+          productId,
+          price: Number(price)
+        }));
+
+      const res = await authFetch(`/vendor/customers/${selectedCustomerForPricing.customerId}/custom-prices`, {
+        method: 'PUT',
+        body: JSON.stringify({ customPrices: customPricesArray })
+      });
+
+      if (res.success) {
+        setSuccess(`Custom pricing updated for ${selectedCustomerForPricing.name}`);
+        setShowCustomPriceModal(false);
+        setSelectedCustomerForPricing(null);
+        fetchData();
+      } else {
+        setError(res.message || 'Failed to update custom prices');
+      }
+    } catch (err) {
+      setError('Connection failure while saving custom prices');
     }
   };
 
@@ -1019,6 +1100,18 @@ const VendorDashboard = () => {
             </button>
             <button
               disabled={!isSubActive}
+              onClick={() => { setActiveTab('profitLoss'); setError(''); setSuccess(''); setSidebarOpen(false); }}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                activeTab === 'profitLoss'
+                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
+                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
+              }`}
+            >
+              <TrendingUp size={18} />
+              Profit &amp; Loss
+            </button>
+            <button
+              disabled={!isSubActive}
               onClick={() => { setActiveTab('customers'); setError(''); setSuccess(''); setSidebarOpen(false); }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
                 activeTab === 'customers'
@@ -1675,6 +1768,7 @@ const VendorDashboard = () => {
                   setEditingProduct(null);
                   setProdName('');
                   setProdPrice('');
+                  setProdPurchasePrice('');
                   setProdDesc('');
                   setProdQty('');
                   setIsStockUpdateOnly(false);
@@ -1689,12 +1783,14 @@ const VendorDashboard = () => {
 
             <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[700px] border-collapse text-left">
+                <table className="w-full min-w-[750px] border-collapse text-left">
                   <thead>
                     <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
                       <th className="p-4">Product Name</th>
                       <th className="p-4">Size / Volume</th>
+                      <th className="p-4">Purchase Cost</th>
                       <th className="p-4">Selling Price</th>
+                      <th className="p-4">Unit Margin</th>
                       <th className="p-4">Catalog Status</th>
                       <th className="p-4 text-right">Actions</th>
                     </tr>
@@ -1709,7 +1805,16 @@ const VendorDashboard = () => {
                           </div>
                         </td>
                         <td className="p-4 text-slate-300 font-medium">{prod.quantity || 'Standard'}</td>
+                        <td className="p-4 text-amber-400 font-medium">Rs. {prod.purchasePrice || 0}</td>
                         <td className="p-4 font-bold text-emerald-400">Rs. {prod.price}</td>
+                        <td className="p-4">
+                          <span className="font-semibold text-sky-400">
+                            Rs. {(Number(prod.price || 0) - Number(prod.purchasePrice || 0)).toFixed(0)}
+                          </span>
+                          <span className="ml-1 text-xs text-slate-400">
+                            ({prod.price > 0 ? (((Number(prod.price) - Number(prod.purchasePrice || 0)) / Number(prod.price)) * 100).toFixed(0) : 0}%)
+                          </span>
+                        </td>
                         <td className="p-4">
                           <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                             prod.isActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
@@ -1724,6 +1829,7 @@ const VendorDashboard = () => {
                                 setEditingProduct(prod);
                                 setProdName(prod.name);
                                 setProdPrice(prod.price);
+                                setProdPurchasePrice(prod.purchasePrice !== undefined ? prod.purchasePrice : '');
                                 setProdDesc(prod.description || '');
                                 setProdQty(prod.quantity || '');
                                 setProdStock(prod.stock || '');
@@ -1746,7 +1852,7 @@ const VendorDashboard = () => {
                     ))}
                     {products.length === 0 && (
                       <tr>
-                        <td colSpan="5" className="p-8 text-center text-sm text-slate-500">
+                        <td colSpan="7" className="p-8 text-center text-sm text-slate-500">
                           No products added yet. Click Add New Product to start.
                         </td>
                       </tr>
@@ -1995,6 +2101,310 @@ const VendorDashboard = () => {
           </section>
         )}
 
+        {/* PROFIT & LOSS TAB */}
+        {activeTab === 'profitLoss' && (
+          <section className="space-y-6 animate-tab-transition">
+            {/* Header & Timeframe selector */}
+            <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+              <div>
+                <h1 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2.5">
+                  <TrendingUp className="text-emerald-400" size={24} />
+                  Profit &amp; Loss Analytics
+                </h1>
+                <p className="text-xs md:text-sm text-slate-400 mt-1">
+                  Financial calculations based on delivered orders, supplier purchase costs, and custom rates.
+                </p>
+              </div>
+
+              {/* Timeframe controls */}
+              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-marine-card border border-marine-800 self-start md:self-center">
+                {[
+                  { key: 'today', label: 'Today' },
+                  { key: 'week', label: '7 Days' },
+                  { key: 'month', label: '30 Days' },
+                  { key: 'year', label: 'Year' },
+                  { key: 'all', label: 'All Time' }
+                ].map((tf) => (
+                  <button
+                    key={tf.key}
+                    onClick={() => {
+                      setProfitLossTimeframe(tf.key);
+                      fetchProfitLoss(tf.key);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      profitLossTimeframe === tf.key
+                        ? 'bg-sky-600 text-white shadow-sm'
+                        : 'text-slate-400 hover:text-white hover:bg-marine-800/60'
+                    }`}
+                  >
+                    {tf.label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => fetchProfitLoss(profitLossTimeframe)}
+                  disabled={profitLossLoading}
+                  className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-marine-800 transition-colors"
+                  title="Refresh analytics"
+                >
+                  <RefreshCw size={14} className={profitLossLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Total Revenue */}
+              <div className="glass-panel p-5 rounded-2xl border border-marine-800 relative overflow-hidden">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Sales Revenue</span>
+                    <span className="text-2xl font-black text-white mt-2 block">
+                      Rs. {Number(profitLossData?.summary?.totalRevenue || 0).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <IndianRupee size={20} />
+                  </div>
+                </div>
+                <div className="mt-3 text-[11px] text-slate-400 flex items-center justify-between border-t border-marine-800/60 pt-2.5">
+                  <span>Delivered Orders:</span>
+                  <span className="font-bold text-slate-200">{profitLossData?.summary?.totalDeliveredOrders || 0} ({profitLossData?.summary?.totalUnitsSold || 0} units)</span>
+                </div>
+              </div>
+
+              {/* COGS */}
+              <div className="glass-panel p-5 rounded-2xl border border-marine-800 relative overflow-hidden">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Cost of Goods (COGS)</span>
+                    <span className="text-2xl font-black text-amber-400 mt-2 block">
+                      Rs. {Number(profitLossData?.summary?.totalCOGS || 0).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                    <Package size={20} />
+                  </div>
+                </div>
+                <div className="mt-3 text-[11px] text-slate-400 flex items-center justify-between border-t border-marine-800/60 pt-2.5">
+                  <span>Wholesale Product Cost</span>
+                  <span className="text-amber-300 font-medium">Delivered items</span>
+                </div>
+              </div>
+
+              {/* Gross Profit */}
+              <div className="glass-panel p-5 rounded-2xl border border-marine-800 relative overflow-hidden">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Gross Profit</span>
+                    <span className={`text-2xl font-black mt-2 block ${
+                      (profitLossData?.summary?.totalGrossProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}>
+                      Rs. {Number(profitLossData?.summary?.totalGrossProfit || 0).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className={`p-2.5 rounded-xl border ${
+                    (profitLossData?.summary?.totalGrossProfit || 0) >= 0
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                      : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                  }`}>
+                    {(profitLossData?.summary?.totalGrossProfit || 0) >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+                  </div>
+                </div>
+                <div className="mt-3 text-[11px] text-slate-400 flex items-center justify-between border-t border-marine-800/60 pt-2.5">
+                  <span>Revenue − COGS</span>
+                  <span className={`font-bold ${(profitLossData?.summary?.totalGrossProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {(profitLossData?.summary?.totalGrossProfit || 0) >= 0 ? 'Net Gain' : 'Net Deficit'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Margin */}
+              <div className="glass-panel p-5 rounded-2xl border border-marine-800 relative overflow-hidden">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Profit Margin</span>
+                    <span className={`text-2xl font-black mt-2 block ${
+                      (profitLossData?.summary?.profitMargin || 0) >= 20 ? 'text-emerald-400' : (profitLossData?.summary?.profitMargin || 0) > 0 ? 'text-amber-400' : 'text-slate-400'
+                    }`}>
+                      {profitLossData?.summary?.profitMargin || 0}%
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400">
+                    <Percent size={20} />
+                  </div>
+                </div>
+                <div className="mt-3 text-[11px] text-slate-400 flex items-center justify-between border-t border-marine-800/60 pt-2.5">
+                  <span>Total Purchases Logged:</span>
+                  <span className="font-bold text-slate-300">Rs. {Number(profitLossData?.summary?.totalPurchasesExpense || 0).toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Product Profitability Breakdown */}
+            <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
+              <div className="p-5 border-b border-marine-800 bg-marine-card/50 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <Package className="text-sky-400" size={18} />
+                    Product Profitability Analysis
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">Revenue, costs, and net margins broken down by product.</p>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
+                      <th className="p-4">Product Name</th>
+                      <th className="p-4">Units Sold</th>
+                      <th className="p-4">Sales Revenue</th>
+                      <th className="p-4">Total Cost (COGS)</th>
+                      <th className="p-4">Gross Profit</th>
+                      <th className="p-4 text-right">Margin %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-marine-800/40 text-sm">
+                    {(profitLossData?.productBreakdown || []).map((prod) => (
+                      <tr key={prod.productId || prod.name} className="hover:bg-marine-card/30 transition-colors">
+                        <td className="p-4 font-semibold text-white">{prod.name}</td>
+                        <td className="p-4 text-slate-300 font-medium">{prod.unitsSold} units</td>
+                        <td className="p-4 font-bold text-white">Rs. {Number(prod.revenue).toLocaleString('en-IN')}</td>
+                        <td className="p-4 text-amber-400 font-medium">Rs. {Number(prod.cogs).toLocaleString('en-IN')}</td>
+                        <td className="p-4 font-bold">
+                          <span className={prod.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                            Rs. {Number(prod.profit).toLocaleString('en-IN')}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold ${
+                            prod.margin >= 25 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                          }`}>
+                            {prod.margin}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {(!profitLossData?.productBreakdown || profitLossData.productBreakdown.length === 0) && (
+                      <tr>
+                        <td colSpan="6" className="p-8 text-center text-sm text-slate-500">
+                          No delivered orders in this timeframe. Profitability data will appear as orders are fulfilled.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Customer Profitability Breakdown */}
+            <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
+              <div className="p-5 border-b border-marine-800 bg-marine-card/50 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <Users className="text-teal-400" size={18} />
+                    Customer Profitability Breakdown
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    See exactly how much profit each customer generates (factoring in custom negotiated rates).
+                  </p>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
+                      <th className="p-4">Customer</th>
+                      <th className="p-4">Orders</th>
+                      <th className="p-4">Units Bought</th>
+                      <th className="p-4">Total Revenue</th>
+                      <th className="p-4">Cost to Supply</th>
+                      <th className="p-4">Net Profit</th>
+                      <th className="p-4 text-right">Margin %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-marine-800/40 text-sm">
+                    {(profitLossData?.customerBreakdown || []).map((cust) => (
+                      <tr key={cust.customerId} className="hover:bg-marine-card/30 transition-colors">
+                        <td className="p-4">
+                          <div className="font-semibold text-white">{cust.name}</div>
+                          {cust.phone && <div className="text-xs text-slate-400">{cust.phone}</div>}
+                        </td>
+                        <td className="p-4 text-slate-300">{cust.ordersCount}</td>
+                        <td className="p-4 text-slate-300 font-medium">{cust.unitsSold} units</td>
+                        <td className="p-4 font-bold text-white">Rs. {Number(cust.revenue).toLocaleString('en-IN')}</td>
+                        <td className="p-4 text-amber-400 font-medium">Rs. {Number(cust.cogs).toLocaleString('en-IN')}</td>
+                        <td className="p-4 font-bold">
+                          <span className={cust.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                            Rs. {Number(cust.profit).toLocaleString('en-IN')}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right">
+                          <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold ${
+                            cust.margin >= 25 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
+                          }`}>
+                            {cust.margin}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                    {(!profitLossData?.customerBreakdown || profitLossData.customerBreakdown.length === 0) && (
+                      <tr>
+                        <td colSpan="7" className="p-8 text-center text-sm text-slate-500">
+                          No customer deliveries recorded in this period.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Recent Deliveries Profit Breakdown */}
+            {profitLossData?.recentOrders?.length > 0 && (
+              <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
+                <div className="p-5 border-b border-marine-800 bg-marine-card/50">
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <History className="text-sky-400" size={18} />
+                    Recent Deliveries Margin Summary
+                  </h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[700px] border-collapse text-left">
+                    <thead>
+                      <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
+                        <th className="p-4">Date</th>
+                        <th className="p-4">Customer</th>
+                        <th className="p-4">Units</th>
+                        <th className="p-4">Sale Amount</th>
+                        <th className="p-4">Cost (COGS)</th>
+                        <th className="p-4">Profit</th>
+                        <th className="p-4 text-right">Margin</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-marine-800/40 text-sm">
+                      {profitLossData.recentOrders.map((ord) => (
+                        <tr key={ord.orderId} className="hover:bg-marine-card/30 transition-colors">
+                          <td className="p-4 text-slate-300 text-xs font-mono">
+                            {ord.date ? new Date(ord.date).toLocaleDateString('en-IN') : 'N/A'}
+                          </td>
+                          <td className="p-4 font-semibold text-white">{ord.customerName}</td>
+                          <td className="p-4 text-slate-300">{ord.units}</td>
+                          <td className="p-4 font-bold text-white">Rs. {Number(ord.revenue).toLocaleString('en-IN')}</td>
+                          <td className="p-4 text-amber-400 font-medium">Rs. {Number(ord.cogs).toLocaleString('en-IN')}</td>
+                          <td className="p-4 font-bold text-emerald-400">Rs. {Number(ord.profit).toLocaleString('en-IN')}</td>
+                          <td className="p-4 text-right">
+                            <span className="font-semibold text-slate-300">{ord.margin}%</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
         {/* CUSTOMERS TAB */}
         {activeTab === 'customers' && (
           <section className="space-y-6 animate-tab-transition">
@@ -2031,6 +2441,12 @@ const VendorDashboard = () => {
                         <td className="p-4">
                           <div className="font-semibold text-white">{cust.name}</div>
                           <div className="text-xs text-slate-400 mt-0.5">{cust.phone}</div>
+                          {cust.customPrices && cust.customPrices.length > 0 && (
+                            <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                              <Tag size={10} />
+                              {cust.customPrices.length} custom rate{cust.customPrices.length > 1 ? 's' : ''}
+                            </span>
+                          )}
                         </td>
                         <td className="p-4 text-slate-300 max-w-[200px] truncate" title={cust.address}>
                           {cust.address}
@@ -2070,13 +2486,23 @@ const VendorDashboard = () => {
                           </div>
                         </td>
                         <td className="p-4 text-right">
-                          <button
-                            onClick={() => handleOpenCustomerPayment(cust)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 hover:border-emerald-500 text-emerald-400 hover:text-white text-xs font-semibold rounded cursor-pointer transition-all"
-                          >
-                            <IndianRupee size={14} />
-                            Pay
-                          </button>
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => handleOpenCustomPriceModal(cust)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/10 hover:bg-amber-600 border border-amber-500/20 hover:border-amber-500 text-amber-400 hover:text-white text-xs font-semibold rounded cursor-pointer transition-all"
+                              title="Set special custom prices for this customer"
+                            >
+                              <Tag size={14} />
+                              Rates
+                            </button>
+                            <button
+                              onClick={() => handleOpenCustomerPayment(cust)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 hover:border-emerald-500 text-emerald-400 hover:text-white text-xs font-semibold rounded cursor-pointer transition-all"
+                            >
+                              <IndianRupee size={14} />
+                              Pay
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2875,20 +3301,34 @@ const VendorDashboard = () => {
                       className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Price per unit (Rs)</label>
+                      <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Selling Price (Rs)</label>
                       <input
                         type="number"
                         required
+                        min="0"
+                        step="any"
                         value={prodPrice}
                         onChange={(e) => setProdPrice(e.target.value)}
-                        placeholder="e.g. 80"
+                        placeholder="e.g. 50"
                         className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Size (e.g. 20L, 1L)</label>
+                      <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Purchase Cost (Rs)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={prodPurchasePrice}
+                        onChange={(e) => setProdPurchasePrice(e.target.value)}
+                        placeholder="e.g. 30"
+                        className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Size (e.g. 20L)</label>
                       <input
                         type="text"
                         value={prodQty}
@@ -2898,6 +3338,14 @@ const VendorDashboard = () => {
                       />
                     </div>
                   </div>
+                  {prodPrice !== '' && prodPurchasePrice !== '' && (
+                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-sky-950/40 border border-sky-800/40 text-xs text-sky-300">
+                      <span>Standard Margin per unit:</span>
+                      <span className="font-bold text-emerald-400">
+                        Rs. {(Number(prodPrice) - Number(prodPurchasePrice)).toFixed(2)} ({Number(prodPrice) > 0 ? (((Number(prodPrice) - Number(prodPurchasePrice)) / Number(prodPrice)) * 100).toFixed(0) : 0}%)
+                      </span>
+                    </div>
+                  )}
                   <div className="rounded-lg border border-marine-800 bg-marine-950/60 p-3">
                     <span className="block text-xs font-semibold uppercase text-slate-400">Availability Status</span>
                     <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${getStockStatus(editingProduct?.stock).className}`}>
@@ -3532,6 +3980,126 @@ const VendorDashboard = () => {
                   className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm rounded-lg cursor-pointer"
                 >
                   Confirm Delivery
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CUSTOM CUSTOMER PRICING */}
+      {showCustomPriceModal && selectedCustomerForPricing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-lg max-h-[calc(100dvh_-_2rem)] overflow-y-auto glass-panel-glow rounded-2xl p-6 border border-amber-500/30 animate-scale-up">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Tag className="text-amber-400" size={20} />
+                  Special Pricing: {selectedCustomerForPricing.name}
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Phone: <span className="text-slate-300 font-mono">{selectedCustomerForPricing.phone}</span>
+                </p>
+              </div>
+              <button
+                onClick={() => { setShowCustomPriceModal(false); setSelectedCustomerForPricing(null); }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-marine-800 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-3 mb-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 leading-relaxed">
+              Set custom selling prices for this specific customer. Any item left blank or empty will automatically use your standard catalog price.
+            </div>
+
+            {error && (
+              <div className="p-3 mb-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveCustomPrices} className="space-y-4">
+              <div className="divide-y divide-marine-800/60 border border-marine-800 rounded-xl overflow-hidden bg-marine-950/60">
+                {products.map((prod) => {
+                  const currentCustomVal = customerCustomPrices[prod._id] !== undefined ? customerCustomPrices[prod._id] : '';
+                  const hasCustom = currentCustomVal !== '' && !isNaN(Number(currentCustomVal));
+                  const effectiveSellPrice = hasCustom ? Number(currentCustomVal) : Number(prod.price || 0);
+                  const purchaseCost = Number(prod.purchasePrice || 0);
+                  const marginPerUnit = effectiveSellPrice - purchaseCost;
+                  const marginPercent = effectiveSellPrice > 0 ? ((marginPerUnit / effectiveSellPrice) * 100).toFixed(0) : 0;
+
+                  return (
+                    <div key={prod._id} className="p-3.5 space-y-2 hover:bg-marine-900/30 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-bold text-white">{prod.name}</div>
+                          <div className="text-xs text-slate-400">
+                            Std. Price: <span className="text-slate-200 font-semibold">Rs. {prod.price}</span>
+                            {purchaseCost > 0 && (
+                              <span className="ml-2 text-slate-400">| Cost: <span className="text-amber-300">Rs. {purchaseCost}</span></span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="w-32">
+                          <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">
+                            Custom Price (Rs)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder={`Std: ${prod.price}`}
+                            value={currentCustomVal}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomerCustomPrices((prev) => ({
+                                ...prev,
+                                [prod._id]: val
+                              }));
+                            }}
+                            className={`w-full bg-marine-900 border rounded-lg p-2 text-sm text-white focus:outline-none ${
+                              hasCustom ? 'border-amber-500/60 bg-amber-950/20 text-amber-200' : 'border-marine-800 focus:border-sky-500'
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      {hasCustom && (
+                        <div className="flex items-center justify-between text-[11px] px-2.5 py-1.5 rounded bg-marine-900/50 border border-marine-800/50">
+                          <span className="text-amber-400 font-medium">Custom Rate Active: Rs. {effectiveSellPrice}</span>
+                          <span className={`font-semibold ${marginPerUnit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            Profit: Rs. {marginPerUnit.toFixed(1)} ({marginPercent}%)
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {products.length === 0 && (
+                  <div className="p-6 text-center text-xs text-slate-500">
+                    No products found. Add products in the Product Catalog first.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCustomPriceModal(false);
+                    setSelectedCustomerForPricing(null);
+                  }}
+                  className="flex-1 py-2.5 border border-marine-850 rounded-lg text-slate-400 font-semibold text-sm hover:bg-marine-card cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={products.length === 0}
+                  className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold text-sm rounded-lg cursor-pointer transition-colors shadow-md shadow-amber-950/30 disabled:opacity-50"
+                >
+                  Save Custom Rates
                 </button>
               </div>
             </form>

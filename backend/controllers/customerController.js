@@ -58,6 +58,22 @@ exports.getVendorDetails = async (req, res) => {
     // Retrieve products for this vendor
     const products = await Product.find({ vendorId }).sort({ createdAt: -1 });
 
+    const customPriceMap = new Map(
+      (relation.customPrices || []).map((cp) => [cp.productId?.toString(), cp.price])
+    );
+
+    const tailoredProducts = products.map((prod) => {
+      const p = prod.toObject ? prod.toObject() : { ...prod };
+      delete p.purchasePrice;
+      const customPrice = customPriceMap.get(prod._id.toString());
+      if (customPrice !== undefined && customPrice !== null && Number.isFinite(Number(customPrice))) {
+        p.standardPrice = p.price;
+        p.price = Number(customPrice);
+        p.isCustomPrice = true;
+      }
+      return p;
+    });
+
     // Retrieve customer's orders from this vendor
     const orders = await Order.find({ vendorId, customerId }).sort({ createdAt: -1 });
 
@@ -77,7 +93,7 @@ exports.getVendorDetails = async (req, res) => {
         },
         bottlesOutstanding: relation.bottlesOutstanding,
         balance: relation.balance,
-        products,
+        products: tailoredProducts,
         orders,
         payments
       }

@@ -150,8 +150,18 @@ exports.createOrder = async (req, res) => {
         }
       }
 
+      const customPriceMap = new Map(
+        (relation?.customPrices || []).map((cp) => [cp.productId?.toString(), cp.price])
+      );
+
       const orderProducts = products.map((item) => {
         const dbProduct = productById.get(item.productId.toString());
+        const customPrice = customPriceMap.get(dbProduct._id.toString());
+        const unitSellPrice = (customPrice !== undefined && customPrice !== null)
+          ? Number(customPrice)
+          : Number(dbProduct.price);
+        const unitCostPrice = dbProduct.purchasePrice !== undefined ? Number(dbProduct.purchasePrice) : 0;
+
         return {
           productId: dbProduct._id,
           name: dbProduct.name,
@@ -160,7 +170,8 @@ exports.createOrder = async (req, res) => {
           deliveredQuantity: orderStatus === 'delivered' && item.deliveredQuantity !== undefined
             ? Number(item.deliveredQuantity)
             : undefined,
-          price: dbProduct.price
+          price: unitSellPrice,
+          purchasePrice: unitCostPrice
         };
       });
 
@@ -317,6 +328,7 @@ exports.updateOrderStatus = async (req, res) => {
           quantity: getRequestedQuantity(item),
           requestedQuantity: getRequestedQuantity(item),
           price: item.price,
+          purchasePrice: item.purchasePrice || 0,
           deliveredQuantity: undefined
         }));
 

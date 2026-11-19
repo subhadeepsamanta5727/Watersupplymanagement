@@ -19,6 +19,18 @@ const vendorCustomerSchema = new mongoose.Schema({
     type: Number,
     default: 0 // Positive: customer owes vendor, Negative: advance payment
   },
+  customPrices: [{
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product',
+      required: true
+    },
+    price: {
+      type: Number,
+      required: true,
+      min: 0
+    }
+  }],
   createdAt: {
     type: Date,
     default: Date.now

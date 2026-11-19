@@ -900,7 +900,15 @@ const CustomerDashboard = () => {
                           style={{ background: 'rgba(255,255,255,0.03)', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                           <div>
                             <div className="text-[10px] text-slate-500 uppercase tracking-wider">Price</div>
-                            <div className="text-lg font-extrabold cp-gradient-text">₹{prod.price}</div>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-lg font-extrabold cp-gradient-text">₹{prod.price}</span>
+                              {prod.isCustomPrice && prod.standardPrice && (
+                                <span className="text-xs text-slate-500 line-through">₹{prod.standardPrice}</span>
+                              )}
+                            </div>
+                            {prod.isCustomPrice && (
+                              <div className="text-[10px] font-semibold text-emerald-400">Special Rate</div>
+                            )}
                           </div>
                           <button
                             disabled={Number(prod.stock || 0) <= 0}
@@ -1131,7 +1139,12 @@ const CustomerDashboard = () => {
           {/* Cost preview */}
           <div className="flex justify-between items-center py-3 px-4 rounded-xl"
             style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}>
-            <span className="text-xs text-slate-400">Estimated cost</span>
+            <div>
+              <span className="text-xs text-slate-400 block">Estimated cost</span>
+              {requestProd?.isCustomPrice && (
+                <span className="text-[10px] font-semibold text-emerald-400 block">Special Customer Rate Applied</span>
+              )}
+            </div>
             <span className="font-extrabold text-white text-lg">₹{requestProd ? requestProd.price * requestQty : 0}</span>
           </div>
 

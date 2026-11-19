@@ -7,6 +7,7 @@ const AgentJarSettlement = require('../models/AgentJarSettlement');
 const Product = require('../models/Product');
 const VendorCustomer = require('../models/VendorCustomer');
 const VendorSubscription = require('../models/VendorSubscription');
+const Purchase = require('../models/Purchase');
 const { parsePagination } = require('../utils/pagination');
 const { getIndiaDayBounds } = require('../utils/indiaDate');
 
@@ -51,7 +52,7 @@ exports.getSubscription = async (req, res) => {
 // @access  Private (Vendor only)
 exports.addProduct = async (req, res) => {
   try {
-    const { name, price, description, imageUrl, quantity, stock } = req.body;
+    const { name, price, purchasePrice, description, imageUrl, quantity, stock } = req.body;
 
     if (!name || price === undefined) {
       return res.status(400).json({ success: false, message: 'Please provide name and price' });
@@ -70,7 +71,8 @@ exports.addProduct = async (req, res) => {
     const product = await Product.create({
       vendorId: req.user._id,
       name,
-      price,
+      price: Number(price),
+      purchasePrice: purchasePrice !== undefined ? Number(purchasePrice) : 0,
       description,
       quantity: quantity || '',
       stock: initialStock,
@@ -137,8 +139,14 @@ exports.updateProduct = async (req, res) => {
     }
 
     const updateData = {};
-    for (const field of ['name', 'price', 'description', 'imageUrl', 'quantity']) {
-      if (req.body[field] !== undefined) updateData[field] = req.body[field];
+    for (const field of ['name', 'price', 'purchasePrice', 'description', 'imageUrl', 'quantity']) {
+      if (req.body[field] !== undefined) {
+        if (field === 'price' || field === 'purchasePrice') {
+          updateData[field] = Number(req.body[field]);
+        } else {
+          updateData[field] = req.body[field];
+        }
+      }
     }
 
     const updateOperation = {};
@@ -308,6 +316,7 @@ exports.getCustomers = async (req, res) => {
         address: cust?.address || 'N/A',
         bottlesOutstanding: rel.bottlesOutstanding,
         balance: rel.balance,
+        customPrices: rel.customPrices || [],
         createdAt: rel.createdAt
       };
     });
@@ -801,6 +810,232 @@ exports.submitAgentJars = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   } finally {
     if (session) await session.endSession();
+  }
+};
+
+// @desc    Update custom product prices for a specific customer
+// @route   PUT /api/v1/vendor/customers/:customerId/custom-prices
+// @access  Private (Vendor only)
+exports.updateCustomerCustomPrices = async (req, res) => {
+  try {
+    const { customerId } = req.params;
+    const { customPrices } = req.body;
+    const vendorId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(customerId)) {
+      return res.status(400).json({ success: false, message: 'Invalid customer ID' });
+    }
+
+    const relation = await VendorCustomer.findOne({ vendorId, customerId });
+    if (!relation) {
+      return res.status(404).json({ success: false, message: 'Customer relationship not found' });
+    }
+
+    if (!Array.isArray(customPrices)) {
+      return res.status(400).json({ success: false, message: 'customPrices must be an array' });
+    }
+
+    // Verify products belong to this vendor and clean items
+    const vendorProducts = await Product.find({ vendorId }).select('_id');
+    const validProductIds = new Set(vendorProducts.map((p) => p._id.toString()));
+
+    const cleanedPrices = [];
+    for (const item of customPrices) {
+      if (!item || !item.productId) continue;
+      const pid = item.productId.toString();
+      if (!validProductIds.has(pid)) continue;
+      const priceNum = Number(item.price);
+      if (Number.isFinite(priceNum) && priceNum >= 0) {
+        cleanedPrices.push({
+          productId: item.productId,
+          price: priceNum
+        });
+      }
+    }
+
+    relation.customPrices = cleanedPrices;
+    await relation.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Custom prices updated successfully',
+      data: {
+        relationId: relation._id,
+        customerId: relation.customerId,
+        customPrices: relation.customPrices
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get Profit & Loss analytics
+// @route   GET /api/v1/vendor/profit-loss
+// @access  Private (Vendor only)
+exports.getProfitLossAnalytics = async (req, res) => {
+  try {
+    const vendorId = req.user._id;
+    const { timeframe } = req.query; // 'today', 'week', 'month', 'year', 'all'
+
+    let startDate = null;
+    const now = new Date();
+    if (timeframe === 'today') {
+      const bounds = getIndiaDayBounds(now);
+      startDate = bounds.start;
+    } else if (timeframe === 'week') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (timeframe === 'month') {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (timeframe === 'year') {
+      startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    }
+
+    const orderFilter = {
+      vendorId,
+      status: 'delivered'
+    };
+    if (startDate) {
+      orderFilter.createdAt = { $gte: startDate };
+    }
+
+    const [orders, purchases, products] = await Promise.all([
+      Order.find(orderFilter).populate('customerId', 'name phone').sort({ createdAt: -1 }),
+      Purchase.find({
+        vendorId,
+        ...(startDate ? { purchaseDate: { $gte: startDate } } : {})
+      }).sort({ purchaseDate: -1 }),
+      Product.find({ vendorId })
+    ]);
+
+    const productCostMap = new Map(products.map((p) => [p._id.toString(), p.purchasePrice || 0]));
+
+    let totalRevenue = 0;
+    let totalCOGS = 0;
+    let totalUnitsSold = 0;
+
+    const productMap = new Map();
+    const customerMap = new Map();
+    const recentOrders = [];
+
+    for (const order of orders) {
+      let orderRevenue = 0;
+      let orderCOGS = 0;
+      let orderUnits = 0;
+
+      const custId = order.customerId?._id?.toString() || 'unknown';
+      const custName = order.customerId?.name || 'Walk-in / Customer';
+      const custPhone = order.customerId?.phone || '';
+
+      for (const item of (order.products || [])) {
+        const qty = item.deliveredQuantity !== undefined ? Number(item.deliveredQuantity) : Number(item.quantity || 0);
+        if (qty <= 0) continue;
+
+        const unitSellPrice = Number(item.price || 0);
+        const fallbackCost = productCostMap.get(item.productId?.toString() || '') || 0;
+        const unitCostPrice = (item.purchasePrice !== undefined && item.purchasePrice !== null && item.purchasePrice > 0)
+          ? Number(item.purchasePrice)
+          : fallbackCost;
+
+        const rev = qty * unitSellPrice;
+        const cogs = qty * unitCostPrice;
+
+        orderRevenue += rev;
+        orderCOGS += cogs;
+        orderUnits += qty;
+
+        // Group by product
+        const pKey = item.productId?.toString() || item.name || 'other';
+        if (!productMap.has(pKey)) {
+          productMap.set(pKey, {
+            productId: item.productId,
+            name: item.name || 'Unnamed Product',
+            unitsSold: 0,
+            revenue: 0,
+            cogs: 0,
+            profit: 0
+          });
+        }
+        const pStat = productMap.get(pKey);
+        pStat.unitsSold += qty;
+        pStat.revenue += rev;
+        pStat.cogs += cogs;
+        pStat.profit += (rev - cogs);
+      }
+
+      totalRevenue += orderRevenue;
+      totalCOGS += orderCOGS;
+      totalUnitsSold += orderUnits;
+
+      // Group by customer
+      if (!customerMap.has(custId)) {
+        customerMap.set(custId, {
+          customerId: custId,
+          name: custName,
+          phone: custPhone,
+          ordersCount: 0,
+          unitsSold: 0,
+          revenue: 0,
+          cogs: 0,
+          profit: 0
+        });
+      }
+      const cStat = customerMap.get(custId);
+      cStat.ordersCount += 1;
+      cStat.unitsSold += orderUnits;
+      cStat.revenue += orderRevenue;
+      cStat.cogs += orderCOGS;
+      cStat.profit += (orderRevenue - orderCOGS);
+
+      if (recentOrders.length < 20) {
+        recentOrders.push({
+          orderId: order._id,
+          date: order.createdAt,
+          customerName: custName,
+          customerPhone: custPhone,
+          units: orderUnits,
+          revenue: orderRevenue,
+          cogs: orderCOGS,
+          profit: orderRevenue - orderCOGS,
+          margin: orderRevenue > 0 ? Number(((orderRevenue - orderCOGS) / orderRevenue * 100).toFixed(1)) : 0
+        });
+      }
+    }
+
+    const totalGrossProfit = totalRevenue - totalCOGS;
+    const profitMargin = totalRevenue > 0 ? Number(((totalGrossProfit / totalRevenue) * 100).toFixed(1)) : 0;
+    const totalPurchasesExpense = purchases.reduce((sum, p) => sum + Number(p.totalAmount || 0), 0);
+
+    const productBreakdown = Array.from(productMap.values()).map((p) => ({
+      ...p,
+      margin: p.revenue > 0 ? Number(((p.profit / p.revenue) * 100).toFixed(1)) : 0
+    })).sort((a, b) => b.profit - a.profit);
+
+    const customerBreakdown = Array.from(customerMap.values()).map((c) => ({
+      ...c,
+      margin: c.revenue > 0 ? Number(((c.profit / c.revenue) * 100).toFixed(1)) : 0
+    })).sort((a, b) => b.profit - a.profit);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        timeframe: timeframe || 'all',
+        summary: {
+          totalRevenue,
+          totalCOGS,
+          totalGrossProfit,
+          profitMargin,
+          totalDeliveredOrders: orders.length,
+          totalUnitsSold,
+          totalPurchasesExpense
+        },
+        productBreakdown,
+        customerBreakdown,
+        recentOrders
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

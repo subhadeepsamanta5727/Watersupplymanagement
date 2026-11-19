@@ -60,13 +60,18 @@ exports.createPurchase = async (req, res) => {
 
       purchase = newPurchase;
 
-      // 2. Automatically increment product stock & activate product
+      // 2. Automatically increment product stock, update purchasePrice, & activate product
+      const productUpdate = {
+        $inc: { stock: qty },
+        $set: { isActive: true }
+      };
+      if (calculatedUnitCost > 0) {
+        productUpdate.$set.purchasePrice = calculatedUnitCost;
+      }
+
       await Product.updateOne(
         { _id: productId, vendorId },
-        {
-          $inc: { stock: qty },
-          $set: { isActive: true }
-        },
+        productUpdate,
         { session }
       );
     });
