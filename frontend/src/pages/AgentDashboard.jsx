@@ -4,6 +4,7 @@ import {
   PackageCheck, Phone, RefreshCw, Truck, Wallet
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import ThemeToggle from '../components/ThemeToggle';
 
 const formatMoney = (amount) => `₹${Number(amount || 0).toLocaleString('en-IN', {
   minimumFractionDigits: 2,
@@ -202,9 +203,12 @@ const AgentDashboard = () => {
           ))}
         </nav>
         <div className="mt-auto p-4 border-t border-marine-800">
-          <div className="px-3 py-2 mb-2">
-            <p className="text-sm font-semibold text-slate-200 truncate">{user?.name || 'Delivery agent'}</p>
-            <p className="text-xs text-slate-500 truncate">{user?.phone}</p>
+          {/* Light/Dark Mode toggle button above logout & name */}
+          <ThemeToggle className="mb-3" />
+
+          <div className="px-3 py-2 mb-2 rounded-lg bg-marine-850/40 dark:bg-slate-900/60 border border-marine-800/60 dark:border-white/5">
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{user?.name || 'Delivery agent'}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user?.phone}</p>
           </div>
           <button
             onClick={logout}

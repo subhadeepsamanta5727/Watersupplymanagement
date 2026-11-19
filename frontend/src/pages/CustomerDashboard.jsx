@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { loadRazorpayScript } from '../utils/loadRazorpayScript';
+import ThemeToggle from '../components/ThemeToggle';
 import {
   Droplet, ShoppingBag, History, CreditCard, LogOut,
   Phone, ShieldAlert, RefreshCw, Send, Menu, X,
@@ -524,10 +525,25 @@ const CustomerDashboard = () => {
 
         {/* Footer */}
         <div className="p-4 space-y-2 border-t border-white/5">
+          {/* Light/Dark Mode toggle button above logout & name */}
+          <ThemeToggle className="mb-1" />
+
+          {/* User profile / Name */}
+          <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0"
+              style={{ background: 'linear-gradient(135deg,#7c3aed,#06b6d4)' }}>
+              {userInitials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-white text-xs truncate">{user?.name || 'Customer'}</div>
+              <div className="text-[10px] text-slate-400 font-mono truncate">{user?.phone}</div>
+            </div>
+          </div>
+
           {vendors.length > 0 && (
             <button
               onClick={() => { fetchVendors(); if (selectedVendorId) fetchVendorDetails(selectedVendorId); setSidebarOpen(false); }}
-              className="cp-btn-ghost w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-semibold cursor-pointer"
+              className="cp-btn-ghost w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold cursor-pointer"
             >
               <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               Sync Data
@@ -535,7 +551,7 @@ const CustomerDashboard = () => {
           )}
           <button
             onClick={logout}
-            className="cp-btn-danger w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold cursor-pointer"
+            className="cp-btn-danger w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold cursor-pointer"
           >
             <LogOut size={13} />
             Sign Out

@@ -4,6 +4,24 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('color-scheme') || localStorage.getItem('theme');
+          var isDark = saved ? saved === 'dark' : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.colorScheme = 'light';
+          }
+          var meta = document.querySelector('meta[name="color-scheme"]');
+          if (meta && saved) meta.content = saved;
+        } catch (e) {}
+      })();
+    </script>
     <title>H2O Delivery Management - Premium Water Tracking Platform</title>
     <meta name="description" content="A 3-level MERN application for managing water suppliers, subscriptions, deliveries, empty bottles tracking, payments, and PDF statement generation." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

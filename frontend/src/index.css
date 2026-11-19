@@ -44,6 +44,41 @@
   }
 }
 
+:root {
+  color-scheme: light dark;
+
+  &:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+  }
+  &:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+  }
+}
+
+html.dark,
+:root:has(> head > meta[name="color-scheme"][content="dark"]) {
+  --color-marine-50: #f8fafc;
+  --color-marine-100: #f1f5f9;
+  --color-marine-200: #e2e8f0;
+  --color-marine-300: #cbd5e1;
+  --color-marine-400: #38bdf8;
+  --color-marine-500: #0ea5e9;
+  --color-marine-600: #0286c7;
+  --color-marine-700: #036ba1;
+  --color-marine-800: #192a45;
+  --color-marine-850: #1e3352;
+  --color-marine-900: #1e3a8a;
+  --color-marine-950: #090e17;
+  --color-marine-card: #132238;
+  --color-marine-sidebar: #0e1828;
+
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+}
+
 body {
   @apply bg-marine-950 text-slate-100 font-sans antialiased overflow-x-hidden;
 }
@@ -108,6 +143,84 @@ button .text-white,
 .hover\:text-white:hover { color: #ffffff !important; }
 .hover\:text-slate-900:hover { color: #0f172a !important; }
 button.border-marine-880:hover { color: #ffffff !important; }
+
+/* Dark Mode Comprehensive Overrides */
+html.dark body {
+  background-color: #090e17 !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark .glass-panel h1, html.dark .glass-panel h2, html.dark .glass-panel h3, html.dark .glass-panel h4,
+html.dark .glass-panel-glow h1, html.dark .glass-panel-glow h2, html.dark .glass-panel-glow h3,
+html.dark main h1, html.dark main h2, html.dark main h3, html.dark main h4,
+html.dark aside h1, html.dark aside h2, html.dark aside h3, html.dark aside h4,
+html.dark .glass-panel .text-white,
+html.dark .glass-panel-glow .text-white,
+html.dark main .text-white,
+html.dark aside .text-white {
+  color: #ffffff !important;
+}
+
+html.dark .text-slate-100 { color: #f1f5f9 !important; }
+html.dark .text-slate-200 { color: #e2e8f0 !important; }
+html.dark .text-slate-300 { color: #cbd5e1 !important; }
+html.dark .text-slate-400 { color: #94a3b8 !important; }
+html.dark .text-slate-500 { color: #64748b !important; }
+
+html.dark .text-cyan-400 { color: #22d3ee !important; }
+html.dark .text-teal-400 { color: #2dd4bf !important; }
+html.dark .text-sky-400 { color: #38bdf8 !important; }
+html.dark .text-cyan-300 { color: #67e8f9 !important; }
+html.dark .text-emerald-400 { color: #34d399 !important; }
+html.dark .text-rose-400 { color: #fb7185 !important; }
+html.dark .text-amber-400 { color: #fbbf24 !important; }
+html.dark .text-amber-300 { color: #fcd34d !important; }
+
+html.dark input, html.dark select, html.dark textarea {
+  color: #f1f5f9 !important;
+  background-color: #132238 !important;
+  border-color: #263852 !important;
+}
+html.dark input::placeholder, html.dark textarea::placeholder {
+  color: #64748b !important;
+}
+html.dark select option {
+  background-color: #132238 !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark .glass-panel {
+  background: rgba(19, 34, 56, 0.75) !important;
+  border: 1px solid rgba(56, 189, 248, 0.16) !important;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.35) !important;
+}
+html.dark .glass-panel-glow {
+  background: rgba(19, 34, 56, 0.92) !important;
+  border: 1px solid rgba(20, 184, 166, 0.3) !important;
+  box-shadow: 0 10px 30px rgba(6, 182, 212, 0.15) !important;
+}
+
+html.dark .hover\:bg-marine-card:hover {
+  background-color: #1a2c47 !important;
+  color: #ffffff !important;
+}
+html.dark .hover\:bg-marine-card:hover svg {
+  color: #38bdf8 !important;
+  stroke: #38bdf8 !important;
+}
+
+html.dark .border-marine-800 {
+  border-color: #192a45 !important;
+}
+html.dark .border-marine-850 {
+  border-color: #1e3352 !important;
+}
+html.dark .bg-marine-sidebar {
+  background-color: #0e1828 !important;
+}
+html.dark .bg-marine-950 {
+  background-color: #090e17 !important;
+}
 
 .bg-emerald-500\/10 {
   background-color: rgba(16, 185, 129, 0.12) !important;

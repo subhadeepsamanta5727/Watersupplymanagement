@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth, API_URL } from '../context/AuthContext';
 import { loadRazorpayScript } from '../utils/loadRazorpayScript';
 import VendorAgentsPanel from '../components/VendorAgentsPanel';
+import ThemeToggle from '../components/ThemeToggle';
 import {
   Building, Package, Users, Truck, DollarSign, LogOut, Plus, FileText,
   AlertTriangle, RefreshCw, CheckCircle, Info, Calendar, Download, Menu, X, Settings,
@@ -993,7 +994,16 @@ const VendorDashboard = () => {
         </div>
 
         {/* Footer actions */}
-        <div className="space-y-4">
+        <div className="space-y-3 pt-3 border-t border-marine-850">
+          {/* Light/Dark Mode toggle button above logout & name */}
+          <ThemeToggle />
+
+          {/* User profile / Name */}
+          <div className="px-3 py-2 rounded-lg bg-marine-850/40 dark:bg-slate-900/60 border border-marine-800/60 dark:border-white/5">
+            <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{user?.name || 'Vendor Admin'}</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{user?.phone || user?.email || 'vendor@water.com'}</p>
+          </div>
+
           <button
             onClick={() => { fetchData(); setSidebarOpen(false); }}
             className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-marine-850 rounded hover:bg-marine-card cursor-pointer transition-colors"

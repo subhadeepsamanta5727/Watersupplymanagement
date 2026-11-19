@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import ThemeToggle from '../components/ThemeToggle';
 import { Shield, Plus, List, Users, CreditCard, LogOut, RefreshCw, Layers, Menu, X, Trash2, Info, IndianRupee, PieChart, Activity, Edit, UserCheck, UserX } from 'lucide-react';
 
 const AdminDashboard = () => {
-  const { logout, authFetch } = useAuth();
+  const { user, logout, authFetch } = useAuth();
   const [activeTab, setActiveTab] = useState('overview'); // 'overview', 'vendors', 'plans', 'paymentSettings'
   const [vendors, setVendors] = useState([]);
   const [plans, setPlans] = useState([]);
@@ -401,7 +402,16 @@ const AdminDashboard = () => {
         </div>
 
         {/* Footer actions */}
-        <div className="space-y-4">
+        <div className="space-y-3 pt-3 border-t border-marine-850">
+          {/* Light/Dark Mode toggle button above logout & name */}
+          <ThemeToggle />
+
+          {/* User profile / Name */}
+          <div className="px-3 py-2 rounded-lg bg-marine-850/40 dark:bg-slate-900/60 border border-marine-800/60 dark:border-white/5">
+            <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{user?.name || 'Administrator'}</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{user?.email || 'admin@water.com'}</p>
+          </div>
+
           <button
             onClick={() => { fetchData(); setSidebarOpen(false); }}
             className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-marine-850 rounded hover:bg-marine-card cursor-pointer transition-colors"

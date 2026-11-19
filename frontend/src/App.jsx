@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import Login from './pages/Login';
 import BusinessLogin from './pages/BusinessLogin';
 import AdminDashboard from './pages/AdminDashboard';
@@ -76,60 +77,62 @@ function App() {
   }, []);
 
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
-          {/* Public Auth pages */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/business-login" element={<BusinessLogin />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password/:token" element={<ResetPassword />} />
+    <ThemeProvider>
+      <AuthProvider>
+        <Router>
+          <Routes>
+            {/* Public Auth pages */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/business-login" element={<BusinessLogin />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password/:token" element={<ResetPassword />} />
 
-          {/* Admin Level (1) */}
-          <Route
-            path="/admin/*"
-            element={
-              <PrivateRoute allowedRoles={['admin']}>
-                <AdminDashboard />
-              </PrivateRoute>
-            }
-          />
+            {/* Admin Level (1) */}
+            <Route
+              path="/admin/*"
+              element={
+                <PrivateRoute allowedRoles={['admin']}>
+                  <AdminDashboard />
+                </PrivateRoute>
+              }
+            />
 
-          {/* Vendor Level (2) */}
-          <Route
-            path="/vendor/*"
-            element={
-              <PrivateRoute allowedRoles={['vendor']}>
-                <VendorDashboard />
-              </PrivateRoute>
-            }
-          />
+            {/* Vendor Level (2) */}
+            <Route
+              path="/vendor/*"
+              element={
+                <PrivateRoute allowedRoles={['vendor']}>
+                  <VendorDashboard />
+                </PrivateRoute>
+              }
+            />
 
-          {/* Customer Level (3) */}
-          <Route
-            path="/customer/*"
-            element={
-              <PrivateRoute allowedRoles={['customer']}>
-                <CustomerDashboard />
-              </PrivateRoute>
-            }
-          />
+            {/* Customer Level (3) */}
+            <Route
+              path="/customer/*"
+              element={
+                <PrivateRoute allowedRoles={['customer']}>
+                  <CustomerDashboard />
+                </PrivateRoute>
+              }
+            />
 
-          <Route
-            path="/agent/*"
-            element={
-              <PrivateRoute allowedRoles={['agent']}>
-                <AgentDashboard />
-              </PrivateRoute>
-            }
-          />
+            <Route
+              path="/agent/*"
+              element={
+                <PrivateRoute allowedRoles={['agent']}>
+                  <AgentDashboard />
+                </PrivateRoute>
+              }
+            />
 
-          {/* Fallback routes */}
-          <Route path="/" element={<RootRedirect />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
-    </AuthProvider>
+            {/* Fallback routes */}
+            <Route path="/" element={<RootRedirect />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
 
