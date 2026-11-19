@@ -7,7 +7,8 @@ import {
   Building, Package, Users, Truck, DollarSign, LogOut, Plus, FileText,
   AlertTriangle, RefreshCw, CheckCircle, Info, Calendar, Download, Menu, X, Settings,
   IndianRupee, Edit, Activity, MapPin, Eye, Clock, ArrowLeft, History,
-  Boxes, ShoppingBag, Layers, TrendingUp, TrendingDown, Tag, Percent
+  Boxes, ShoppingBag, Layers, TrendingUp, TrendingDown, Tag, Percent,
+  ChevronRight, Lock, UserCheck, Sparkles
 } from 'lucide-react';
 
 const getStockStatus = (stock) => {
@@ -866,6 +867,119 @@ const VendorDashboard = () => {
   };
 
   const isSubActive = subStatus && subStatus.active;
+  const pendingOrdersCount = (orders || []).filter(o => o.status === 'pending').length;
+  const lowStockCount = (products || []).filter(p => Number(p.stock || 0) < 5).length;
+  const userInitials = user?.name
+    ? user.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+    : 'VA';
+
+  const isItemActive = (id) => {
+    if (id === 'customers') return activeTab === 'customers' || activeTab === 'customerRecords';
+    return activeTab === id;
+  };
+
+  const navSections = [
+    {
+      title: 'CORE',
+      items: [
+        {
+          id: 'overview',
+          label: 'Overview',
+          icon: <Activity size={17} />,
+          badge: null
+        },
+        {
+          id: 'subscription',
+          label: 'Subscription',
+          icon: <Calendar size={17} />,
+          badge: isSubActive
+            ? { label: 'Active', color: 'emerald' }
+            : { label: 'Inactive', color: 'rose' }
+        }
+      ]
+    },
+    {
+      title: 'CATALOG & INVENTORY',
+      items: [
+        {
+          id: 'products',
+          label: 'Products',
+          icon: <Package size={17} />,
+          requiresSub: true,
+          badge: products.length > 0 ? { label: products.length, color: 'slate' } : null
+        },
+        {
+          id: 'inventory',
+          label: 'Inventory',
+          icon: <Boxes size={17} />,
+          requiresSub: true,
+          badge: lowStockCount > 0 ? { label: `${lowStockCount} low`, color: 'amber' } : null
+        },
+        {
+          id: 'purchases',
+          label: 'Purchases',
+          icon: <ShoppingBag size={17} />,
+          requiresSub: true,
+          badge: purchases.length > 0 ? { label: purchases.length, color: 'slate' } : null
+        }
+      ]
+    },
+    {
+      title: 'OPERATIONS',
+      items: [
+        {
+          id: 'customers',
+          label: 'Customer Tracker',
+          icon: <Users size={17} />,
+          requiresSub: true,
+          badge: customers.length > 0 ? { label: customers.length, color: 'slate' } : null
+        },
+        {
+          id: 'deliveries',
+          label: 'Log Deliveries',
+          icon: <Truck size={17} />,
+          requiresSub: true,
+          badge: pendingOrdersCount > 0 ? { label: `${pendingOrdersCount} new`, color: 'sky', pulse: true } : null
+        },
+        {
+          id: 'agents',
+          label: 'Delivery Agents',
+          icon: <UserCheck size={17} />,
+          badge: agents.length > 0 ? { label: agents.length, color: 'slate' } : null
+        }
+      ]
+    },
+    {
+      title: 'FINANCE & INSIGHTS',
+      items: [
+        {
+          id: 'profitLoss',
+          label: 'Profit & Loss',
+          icon: <TrendingUp size={17} />,
+          requiresSub: true,
+          badge: { label: 'New', color: 'emerald' }
+        },
+        {
+          id: 'payments',
+          label: 'Collect Payments',
+          icon: <DollarSign size={17} />,
+          requiresSub: true,
+          badge: null
+        }
+      ]
+    },
+    {
+      title: 'SYSTEM',
+      items: [
+        {
+          id: 'settings',
+          label: 'Settings',
+          icon: <Settings size={17} />,
+          badge: null
+        }
+      ]
+    }
+  ];
 
   // Analytics calculations based on selected timeframe
   const getFilteredAnalyticsData = () => {
@@ -1101,18 +1215,23 @@ const VendorDashboard = () => {
     <div className="h-dvh overflow-hidden flex flex-col md:flex-row bg-marine-950 text-slate-100">
       
       {/* MOBILE HEADER BAR */}
-      <header className="flex md:hidden items-center justify-between p-4 bg-marine-sidebar border-b border-marine-800 z-20">
+      <header className="flex md:hidden items-center justify-between px-4 py-3 bg-marine-sidebar border-b border-marine-800 z-20">
         <div className="flex items-center gap-3">
-          <div className="p-1.5 bg-sky-600/10 rounded-lg text-sky-500 border border-sky-500/20">
-            <Building size={18} className="fill-sky-500/20" />
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-600 to-cyan-500 flex items-center justify-center text-white shadow-xs">
+            <Building size={16} className="text-white" />
           </div>
-          <h2 className="font-bold text-slate-800 text-sm">Vendor Panel</h2>
+          <div>
+            <h2 className="font-bold text-slate-900 dark:text-white text-sm leading-tight">Vendor Panel</h2>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 tracking-wider uppercase font-semibold block">
+              {import.meta.env.VITE_PROJECT_NAME || 'Distributor Console'}
+            </span>
+          </div>
         </div>
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-1 text-slate-600 hover:text-sky-600 transition-colors cursor-pointer"
+          className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:text-sky-600 hover:bg-slate-200/50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
         >
-          {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
+          {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
       </header>
 
@@ -1125,190 +1244,157 @@ const VendorDashboard = () => {
       )}
 
       {/* SIDEBAR NAVIGATION (SLIDING DRAWER MENU) */}
-      <aside className={`fixed inset-y-0 left-0 w-64 overflow-y-auto bg-marine-sidebar border-r border-marine-800 flex flex-col justify-between p-6 z-40 transition-transform duration-300 md:static md:translate-x-0 ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+      <aside className={`fixed inset-y-0 left-0 w-68 md:w-72 bg-marine-sidebar border-r border-marine-800 flex flex-col justify-between z-40 transition-transform duration-300 md:static md:translate-x-0 shrink-0 h-full ${
+        sidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
       }`}>
-        <div className="space-y-8">
-          {/* Header branding */}
+        {/* Header branding */}
+        <div className="p-4 border-b border-marine-800/80 dark:border-white/5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-sky-600/10 rounded-lg text-sky-400 border border-sky-500/20">
-                <Building size={24} className="fill-sky-400/20" />
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="relative w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-600 to-cyan-500 flex items-center justify-center text-white shadow-md shadow-sky-600/25 shrink-0">
+                <Building size={20} className="text-white" />
+                <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 border-marine-sidebar ${
+                  isSubActive ? 'bg-emerald-400' : 'bg-rose-400'
+                }`} />
               </div>
-              <div>
-                <h2 className="font-bold text-white leading-tight">Vendor Panel</h2>
-                <span className="text-[10px] text-slate-400 tracking-wider uppercase font-semibold">
-                  {import.meta.env.VITE_PROJECT_NAME || 'Distributor Console'}
-                </span>
+              <div className="min-w-0">
+                <h2 className="font-extrabold text-slate-900 dark:text-white text-sm truncate leading-tight">
+                  {user?.name || 'Vendor Hub'}
+                </h2>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isSubActive ? 'bg-emerald-500 animate-pulse' : 'bg-rose-400'}`} />
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 tracking-wider uppercase font-bold truncate">
+                    {isSubActive ? (subStatus?.planName || 'Pro Plan') : 'Plan Inactive'}
+                  </span>
+                </div>
               </div>
             </div>
             {/* Close button for mobile */}
             <button
               onClick={() => setSidebarOpen(false)}
-              className="p-1 md:hidden text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 md:hidden rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
             >
               <X size={18} />
             </button>
           </div>
-
-          {/* Navigation Items */}
-          <nav className="space-y-2">
-            <button
-              onClick={() => { setActiveTab('overview'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === 'overview'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <Info size={18} />
-              Overview
-            </button>
-            <button
-              onClick={() => { setActiveTab('subscription'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === 'subscription'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <Calendar size={18} />
-              Subscription
-            </button>
-            <button
-              disabled={!isSubActive}
-              onClick={() => { setActiveTab('products'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                activeTab === 'products'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <Package size={18} />
-              Products
-            </button>
-            <button
-              disabled={!isSubActive}
-              onClick={() => { setActiveTab('inventory'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                activeTab === 'inventory'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <Boxes size={18} />
-              Inventory
-            </button>
-            <button
-              disabled={!isSubActive}
-              onClick={() => { setActiveTab('purchases'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                activeTab === 'purchases'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <ShoppingBag size={18} />
-              Purchases
-            </button>
-            <button
-              disabled={!isSubActive}
-              onClick={() => { setActiveTab('profitLoss'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                activeTab === 'profitLoss'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <TrendingUp size={18} />
-              Profit &amp; Loss
-            </button>
-            <button
-              disabled={!isSubActive}
-              onClick={() => { setActiveTab('customers'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                activeTab === 'customers'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <Users size={18} />
-              Customer Tracker
-            </button>
-            <button
-              onClick={() => { setActiveTab('agents'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === 'agents'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <Users size={18} />
-              Delivery Agents
-            </button>
-            <button
-              disabled={!isSubActive}
-              onClick={() => { setActiveTab('deliveries'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                activeTab === 'deliveries'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <Truck size={18} />
-              Log Deliveries
-            </button>
-            <button
-              disabled={!isSubActive}
-              onClick={() => { setActiveTab('payments'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
-                activeTab === 'payments'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <DollarSign size={18} />
-              Collect Payments
-            </button>
-            <button
-              onClick={() => { setActiveTab('settings'); setError(''); setSuccess(''); setSidebarOpen(false); }}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
-                activeTab === 'settings'
-                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-950/40'
-                  : 'text-slate-400 hover:bg-marine-card hover:text-white'
-              }`}
-            >
-              <Settings size={18} />
-              Settings
-            </button>
-          </nav>
         </div>
 
-        {/* Footer actions */}
-        <div className="space-y-3 pt-3 border-t border-marine-850">
-          {/* Light/Dark Mode toggle button above logout & name */}
-          <ThemeToggle />
+        {/* Navigation Items (Grouped with smooth scrollbar) */}
+        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4 scrollbar-thin">
+          {navSections.map((section) => (
+            <div key={section.title} className="space-y-1">
+              <div className="px-3 pt-1 pb-1 text-[10px] font-bold tracking-wider uppercase text-slate-500 dark:text-slate-400">
+                {section.title}
+              </div>
+              <div className="space-y-1">
+                {section.items.map((item) => {
+                  const active = isItemActive(item.id);
+                  const disabled = item.requiresSub && !isSubActive;
+                  return (
+                    <button
+                      key={item.id}
+                      disabled={disabled}
+                      onClick={() => {
+                        setActiveTab(item.id);
+                        setError('');
+                        setSuccess('');
+                        setSidebarOpen(false);
+                      }}
+                      className={`group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        disabled
+                          ? 'opacity-40 cursor-not-allowed text-slate-400 dark:text-slate-600'
+                          : active
+                          ? 'bg-gradient-to-r from-sky-600 to-cyan-600 text-white shadow-md shadow-sky-600/25 font-bold'
+                          : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {/* Active indicator bar */}
+                      {active && (
+                        <span className="absolute left-1 top-2.5 bottom-2.5 w-1 rounded-full bg-white/90 shadow-xs" />
+                      )}
 
-          {/* User profile / Name */}
-          <div className="px-3 py-2 rounded-lg bg-marine-850/40 dark:bg-slate-900/60 border border-marine-800/60 dark:border-white/5">
-            <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{user?.name || 'Vendor Admin'}</p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{user?.phone || user?.email || 'vendor@water.com'}</p>
+                      {/* Icon */}
+                      <span className={`shrink-0 transition-transform group-hover:scale-105 ${
+                        active ? 'text-white' : 'text-slate-500 dark:text-slate-400 group-hover:text-sky-500'
+                      }`}>
+                        {item.icon}
+                      </span>
+
+                      {/* Label */}
+                      <span className="truncate flex-1 text-left">{item.label}</span>
+
+                      {/* Lock if requires active plan */}
+                      {disabled && (
+                        <Lock size={12} className="shrink-0 text-slate-400 opacity-60 ml-auto" />
+                      )}
+
+                      {/* Badge if available */}
+                      {item.badge && (!item.requiresSub || isSubActive) && (
+                        <span className={`shrink-0 ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          item.badge.color === 'emerald'
+                            ? active ? 'bg-white/20 text-white' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                            : item.badge.color === 'rose'
+                            ? active ? 'bg-white/20 text-white' : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                            : item.badge.color === 'amber'
+                            ? active ? 'bg-white/20 text-white' : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                            : item.badge.color === 'sky'
+                            ? active ? 'bg-white/20 text-white' : 'bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/25'
+                            : active ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                        } ${item.badge.pulse ? 'animate-pulse' : ''}`}>
+                          {item.badge.label}
+                        </span>
+                      )}
+
+                      {/* Active chevron */}
+                      {active && (
+                        <ChevronRight size={13} className="ml-1 opacity-70 shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* Footer actions */}
+        <div className="p-3 border-t border-marine-800/80 dark:border-white/5 space-y-2 bg-marine-sidebar/60">
+          {/* Light/Dark Mode toggle button */}
+          <div className="flex items-center justify-between px-2 py-1">
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Theme</span>
+            <ThemeToggle />
           </div>
 
-          <button
-            onClick={() => { fetchData(); setSidebarOpen(false); }}
-            className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-slate-400 hover:text-white border border-marine-850 rounded hover:bg-marine-card cursor-pointer transition-colors"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Sync Dashboard
-          </button>
-          <button
-            onClick={logout}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-rose-950/40 border border-rose-900/30 text-rose-400 text-xs font-bold hover:bg-rose-900/40 hover:text-rose-300 transition-colors cursor-pointer"
-          >
-            <LogOut size={14} />
-            Logout Account
-          </button>
+          {/* User profile / Name card */}
+          <div className="p-2.5 rounded-xl bg-white/70 dark:bg-slate-900/70 border border-marine-800/80 dark:border-white/5 flex items-center gap-2.5 shadow-2xs">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-600 to-indigo-600 flex items-center justify-center text-xs font-bold text-white shadow-2xs shrink-0">
+              {userInitials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{user?.name || 'Vendor Admin'}</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{user?.phone || user?.email || 'vendor@water.com'}</p>
+            </div>
+          </div>
+
+          {/* Action buttons (Sync & Logout) */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <button
+              onClick={() => { fetchData(); setSidebarOpen(false); }}
+              className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 bg-white/50 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 border border-marine-800 dark:border-white/5 transition-all cursor-pointer shadow-2xs"
+              title="Sync Dashboard"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+              <span>Sync</span>
+            </button>
+            <button
+              onClick={logout}
+              className="flex items-center justify-center gap-1.5 py-2 px-2.5 rounded-xl text-[11px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/30 transition-all cursor-pointer shadow-2xs"
+              title="Logout Account"
+            >
+              <LogOut size={13} />
+              <span>Logout</span>
+            </button>
+          </div>
         </div>
       </aside>
 
