@@ -130,14 +130,26 @@ exports.createOrder = async (req, res) => {
 
       const dbProducts = await Product.find({
         _id: { $in: products.map((item) => item.productId) },
-        vendorId,
-        stock: { $gt: 0 }
+        vendorId
       }).session(session);
       if (dbProducts.length !== products.length) {
-        throw createHttpError(404, 'One or more products were not found or are out of stock for this vendor');
+        throw createHttpError(404, 'One or more products were not found for this vendor');
       }
 
       const productById = new Map(dbProducts.map((product) => [product._id.toString(), product]));
+
+      // Validate stock availability before processing
+      for (const item of products) {
+        const dbProduct = productById.get(item.productId.toString());
+        const requestedQty = Number(item.quantity);
+        if (dbProduct.stock < requestedQty) {
+          throw createHttpError(
+            409,
+            `Insufficient stock for ${dbProduct.name}. Only ${dbProduct.stock} left in stock.`
+          );
+        }
+      }
+
       const orderProducts = products.map((item) => {
         const dbProduct = productById.get(item.productId.toString());
         return {
@@ -196,11 +208,30 @@ exports.createOrder = async (req, res) => {
       });
       await order.save({ session });
 
-      if (orderStatus === 'delivered') {
+      if (orderStatus === 'pending') {
+        // Reserve stock immediately: deduct from stock, add to pendingDeliveryStock
+        for (const item of orderProducts) {
+          const qty = item.quantity;
+          const updatedProduct = await Product.findOneAndUpdate(
+            { _id: item.productId, vendorId, stock: { $gte: qty } },
+            { $inc: { stock: -qty, pendingDeliveryStock: qty } },
+            { new: true, session }
+          );
+          if (!updatedProduct) {
+            throw createHttpError(409, `Insufficient stock for ${item.name}. Another customer may have just purchased the remaining stock.`);
+          }
+          await Product.updateOne(
+            { _id: item.productId, vendorId, stock: updatedProduct.stock },
+            { $set: { isActive: updatedProduct.stock > 0 } },
+            { session }
+          );
+        }
+      } else if (orderStatus === 'delivered') {
         relation.balance += totalAmount;
         relation.bottlesOutstanding += finalDelivered - finalReturned;
         await relation.save({ session });
 
+        // Immediate walk-in delivery: deduct directly from stock
         for (const item of orderProducts) {
           if (!item.deliveredQuantity) continue;
           const updatedProduct = await Product.findOneAndUpdate(
@@ -352,24 +383,21 @@ exports.updateOrderStatus = async (req, res) => {
         relation.bottlesOutstanding += totalDelivered - totalReturned;
 
         for (const item of order.products) {
-          if (!item.deliveredQuantity) continue;
-          const updatedProduct = await Product.findOneAndUpdate(
-            {
-              _id: item.productId,
-              vendorId,
-              stock: { $gte: item.deliveredQuantity }
-            },
-            { $inc: { stock: -item.deliveredQuantity } },
-            { new: true, session }
-          );
-          if (!updatedProduct) {
-            throw createHttpError(409, `Insufficient stock for ${item.name}`);
+          const requestedQty = getRequestedQuantity(item);
+          const deliveredQty = Number(item.deliveredQuantity || 0);
+          const undeliveredQty = Math.max(0, requestedQty - deliveredQty);
+
+          const prod = await Product.findById(item.productId).session(session);
+          if (prod) {
+            // Deduct from pendingDeliveryStock since order is fulfilled
+            prod.pendingDeliveryStock = Math.max(0, (prod.pendingDeliveryStock || 0) - requestedQty);
+            // If partial delivery, return undelivered portion back to available stock
+            if (undeliveredQty > 0) {
+              prod.stock += undeliveredQty;
+              prod.isActive = prod.stock > 0;
+            }
+            await prod.save({ session });
           }
-          await Product.updateOne(
-            { _id: item.productId, vendorId, stock: updatedProduct.stock },
-            { $set: { isActive: updatedProduct.stock > 0 } },
-            { session }
-          );
         }
 
         const { paymentMethod, paymentAmount } = body;
@@ -441,6 +469,19 @@ exports.updateOrderStatus = async (req, res) => {
         }
         order.status = 'cancelled';
       } else {
+        // previousStatus was 'pending': restore reserved stock back to available stock
+        for (const item of order.products) {
+          const requestedQty = getRequestedQuantity(item);
+          if (requestedQty > 0) {
+            const prod = await Product.findById(item.productId).session(session);
+            if (prod) {
+              prod.stock += requestedQty;
+              prod.pendingDeliveryStock = Math.max(0, (prod.pendingDeliveryStock || 0) - requestedQty);
+              prod.isActive = prod.stock > 0;
+              await prod.save({ session });
+            }
+          }
+        }
         order.status = 'cancelled';
       }
 

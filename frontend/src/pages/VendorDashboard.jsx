@@ -1627,7 +1627,14 @@ const VendorDashboard = () => {
                           </td>
                           <td className="p-4 text-slate-300">{prod.quantity || 'N/A'}</td>
                           <td className="p-4 font-semibold text-slate-200">Rs. {prod.price}</td>
-                          <td className="p-4 font-bold text-white">{stock} units</td>
+                          <td className="p-4">
+                            <div className="font-bold text-white">{stock} available</div>
+                            {Number(prod.pendingDeliveryStock || 0) > 0 && (
+                              <div className="text-[11px] font-semibold text-amber-400 mt-0.5">
+                                {prod.pendingDeliveryStock} pending delivery
+                              </div>
+                            )}
+                          </td>
                           <td className="p-4">
                             <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${stockStatus.className}`}>
                               {stockStatus.label}

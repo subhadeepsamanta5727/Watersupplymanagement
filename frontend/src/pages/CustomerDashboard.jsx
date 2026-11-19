@@ -870,12 +870,27 @@ const CustomerDashboard = () => {
                               style={{ background: 'linear-gradient(135deg,rgba(124,58,237,0.2),rgba(6,182,212,0.2))', border: '1px solid rgba(124,58,237,0.2)' }}>
                               <Droplet size={20} className="text-cyan-400" />
                             </div>
-                            {prod.quantity && (
-                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold text-violet-400 shrink-0"
-                                style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.2)' }}>
-                                {prod.quantity}
-                              </span>
-                            )}
+                            <div className="flex flex-col items-end gap-1">
+                              {prod.quantity && (
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold text-violet-400 shrink-0"
+                                  style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.2)' }}>
+                                  {prod.quantity}
+                                </span>
+                              )}
+                              {Number(prod.stock || 0) <= 0 ? (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/25">
+                                  Out of Stock
+                                </span>
+                              ) : Number(prod.stock) < 5 ? (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/25">
+                                  Only {prod.stock} left
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/25">
+                                  In Stock ({prod.stock})
+                                </span>
+                              )}
+                            </div>
                           </div>
                           <h3 className="font-bold text-white text-base leading-snug">{prod.name}</h3>
                           <p className="text-xs text-slate-400 leading-relaxed line-clamp-2">{prod.description || 'Pure, fresh water delivered to your doorstep.'}</p>
@@ -888,8 +903,10 @@ const CustomerDashboard = () => {
                             <div className="text-lg font-extrabold cp-gradient-text">₹{prod.price}</div>
                           </div>
                           <button
+                            disabled={Number(prod.stock || 0) <= 0}
                             onClick={() => {
                               setRequestProd(prod);
+                              setRequestQty(1);
                               const slots = vendorDetails?.vendor?.deliverySlots?.length > 0
                                 ? vendorDetails.vendor.deliverySlots
                                 : ['Morning (8 AM – 12 PM)', 'Afternoon (12 PM – 4 PM)', 'Evening (4 PM – 8 PM)'];
@@ -900,8 +917,14 @@ const CustomerDashboard = () => {
                               setSaveToProfile(false);
                               setShowRequestModal(true);
                             }}
-                            className="cp-btn-primary px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer flex items-center gap-1.5">
-                            <span className="flex items-center gap-1.5"><Send size={12} /> Request</span>
+                            className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                              Number(prod.stock || 0) <= 0
+                                ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed opacity-50'
+                                : 'cp-btn-primary cursor-pointer'
+                            }`}>
+                            <span className="flex items-center gap-1.5">
+                              <Send size={12} /> {Number(prod.stock || 0) <= 0 ? 'Out of Stock' : 'Request'}
+                            </span>
                           </button>
                         </div>
                       </div>
@@ -1045,8 +1068,13 @@ const CustomerDashboard = () => {
 
           <div>
             <label className={labelCls}>Quantity (Jars)</label>
-            <input type="number" min="1" required value={requestQty}
+            <input type="number" min="1" max={Math.max(1, Number(requestProd?.stock || 1))} required value={requestQty}
               onChange={e => setRequestQty(e.target.value)} className={inputCls} />
+            {requestProd?.stock !== undefined && (
+              <span className="text-[11px] text-cyan-400 mt-1 block">
+                Available in stock: {requestProd.stock} jars
+              </span>
+            )}
           </div>
 
           <div>

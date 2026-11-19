@@ -55,8 +55,8 @@ exports.getVendorDetails = async (req, res) => {
       });
     }
 
-    // Retrieve active products for this vendor
-    const products = await Product.find({ vendorId, stock: { $gt: 0 } });
+    // Retrieve products for this vendor
+    const products = await Product.find({ vendorId }).sort({ createdAt: -1 });
 
     // Retrieve customer's orders from this vendor
     const orders = await Order.find({ vendorId, customerId }).sort({ createdAt: -1 });
