@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { CheckCircle, IndianRupee, Phone, Plus, RefreshCw, UserPlus, Users, X } from 'lucide-react';
+import { CheckCircle, IndianRupee, Phone, Plus, RefreshCw, Trash2, UserPlus, Users, X } from 'lucide-react';
+
+const hasUnsettledBalances = (agent) => Number(agent.pendingCash || 0) > 0 || Number(agent.pendingJars || 0) > 0;
 
 const VendorAgentsPanel = ({ agents, authFetch, onAgentsUpdated, canCreateAgents }) => {
   const [name, setName] = useState('');
@@ -10,6 +12,8 @@ const VendorAgentsPanel = ({ agents, authFetch, onAgentsUpdated, canCreateAgents
   const [saving, setSaving] = useState(false);
   const [submittingAgentId, setSubmittingAgentId] = useState('');
   const [submittingJarAgentId, setSubmittingJarAgentId] = useState('');
+  const [deletingAgentId, setDeletingAgentId] = useState('');
+  const [updatingAgentId, setUpdatingAgentId] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
 
@@ -97,10 +101,77 @@ const VendorAgentsPanel = ({ agents, authFetch, onAgentsUpdated, canCreateAgents
     }
   };
 
+  const deleteAgent = async (agent) => {
+    setError('');
+    setSuccess('');
+    setDeletingAgentId(agent._id);
+    try {
+      const result = await authFetch(`/vendor/agents/${agent._id}`, { method: 'DELETE' });
+      if (!result.success) {
+        setError(result.message || 'Failed to remove the delivery agent.');
+        return;
+      }
+
+      setSuccess(`${agent.name} was permanently removed. Historical records were retained.`);
+      await onAgentsUpdated();
+    } catch {
+      setError('Connection failure while removing the delivery agent.');
+    } finally {
+      setDeletingAgentId('');
+    }
+  };
+
+  const updateAgentStatus = async (agent, isActive) => {
+    setError('');
+    setSuccess('');
+    setUpdatingAgentId(agent._id);
+    try {
+      const result = await authFetch(`/vendor/agents/${agent._id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive })
+      });
+      if (!result.success) {
+        setError(result.message || 'Failed to update the delivery agent status.');
+        return;
+      }
+
+      setSuccess(`${agent.name} was ${isActive ? 'activated' : 'deactivated'}.`);
+      await onAgentsUpdated();
+    } catch {
+      setError('Connection failure while updating the delivery agent status.');
+    } finally {
+      setUpdatingAgentId('');
+    }
+  };
+
+  const promptAgentStatusChange = (agent) => {
+    const isActive = !agent.isActive;
+    setConfirmAction({
+      title: `${isActive ? 'Activate' : 'Deactivate'} Agent`,
+      message: isActive
+        ? `Allow ${agent.name} to sign in and access agent delivery features again?`
+        : `Deactivate ${agent.name}'s account? They will no longer be able to sign in or use agent delivery features.`,
+      confirmLabel: `${isActive ? 'Activate' : 'Deactivate'} agent`,
+      danger: !isActive,
+      onConfirm: () => updateAgentStatus(agent, isActive)
+    });
+  };
+
+  const promptDeleteAgent = (agent) => {
+    setConfirmAction({
+      title: 'Permanently Remove Agent',
+      message: `Permanently delete ${agent.name}'s login account? Pending cash and jars must be settled first. Pending orders will be returned to the open queue; historical records will be retained.`,
+      confirmLabel: 'Permanently remove',
+      danger: true,
+      onConfirm: () => deleteAgent(agent)
+    });
+  };
+
   const promptSubmitCollection = (agent) => {
     setConfirmAction({
       title: 'Confirm Cash Handover',
       message: `Confirm that you have physically received ₹${Number(agent.pendingCash).toFixed(2)} cash from ${agent.name}?`,
+      confirmLabel: 'Confirm Received',
       onConfirm: () => submitCollection(agent)
     });
   };
@@ -110,6 +181,7 @@ const VendorAgentsPanel = ({ agents, authFetch, onAgentsUpdated, canCreateAgents
     setConfirmAction({
       title: 'Confirm Empty Jar Handover',
       message: `Confirm that you have physically received ${jarCount} empty jars from ${agent.name}?`,
+      confirmLabel: 'Confirm Received',
       onConfirm: () => submitJarCollection(agent)
     });
   };
@@ -284,13 +356,19 @@ const VendorAgentsPanel = ({ agents, authFetch, onAgentsUpdated, canCreateAgents
                     <p className="font-semibold text-white">{agent.name}</p>
                     <p className="text-xs text-slate-400">{agent.phone}</p>
                   </div>
-                  <span className={`ml-auto px-2 py-1 rounded text-[10px] font-bold ${
-                    agent.isActive
-                      ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                      : 'bg-slate-500/10 border border-slate-500/30 text-slate-400'
-                  }`}>
-                    {agent.isActive ? 'ACTIVE' : 'INACTIVE'}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => promptAgentStatusChange(agent)}
+                    disabled={updatingAgentId === agent._id}
+                    aria-label={`${agent.isActive ? 'Deactivate' : 'Activate'} ${agent.name}`}
+                    className={`ml-auto px-2 py-1 rounded text-[10px] font-bold cursor-pointer disabled:cursor-wait disabled:opacity-50 ${
+                      agent.isActive
+                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20'
+                        : 'bg-slate-500/10 border border-slate-500/30 text-slate-400 hover:bg-slate-500/20'
+                    }`}
+                  >
+                    {updatingAgentId === agent._id ? 'UPDATING...' : agent.isActive ? 'ACTIVE' : 'INACTIVE'}
+                  </button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                   <div className="rounded-xl bg-marine-950/60 border border-marine-800 p-3">
@@ -339,7 +417,22 @@ const VendorAgentsPanel = ({ agents, authFetch, onAgentsUpdated, canCreateAgents
                       : <CheckCircle size={15} />}
                     {submittingJarAgentId === agent._id ? 'Submitting...' : 'Mark jars as submitted'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => promptDeleteAgent(agent)}
+                    disabled={hasUnsettledBalances(agent) || deletingAgentId === agent._id}
+                    title={hasUnsettledBalances(agent) ? 'Settle all cash and jars before removing this agent.' : undefined}
+                    className="inline-flex items-center gap-2 rounded-lg border border-rose-500/40 px-3 py-2 text-sm font-semibold text-rose-300 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Trash2 size={15} />
+                    {deletingAgentId === agent._id ? 'Removing...' : 'Remove agent'}
+                  </button>
                 </div>
+                {hasUnsettledBalances(agent) && (
+                  <p className="text-xs text-amber-300">
+                    Settle all outstanding cash and jars before removing this agent.
+                  </p>
+                )}
               </li>
             ))}
           </ul>
@@ -366,9 +459,13 @@ const VendorAgentsPanel = ({ agents, authFetch, onAgentsUpdated, canCreateAgents
                   setConfirmAction(null);
                   if (action) await action();
                 }}
-                className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500 transition-colors cursor-pointer"
+                className={`rounded-lg px-4 py-2 text-xs font-bold text-white transition-colors cursor-pointer ${
+                  confirmAction.danger
+                    ? 'bg-rose-600 hover:bg-rose-500'
+                    : 'bg-sky-600 hover:bg-sky-500'
+                }`}
               >
-                Confirm Received
+                {confirmAction.confirmLabel || 'Confirm Received'}
               </button>
             </div>
           </div>

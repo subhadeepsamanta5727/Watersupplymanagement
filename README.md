@@ -21,6 +21,7 @@ A production-ready, full-stack water delivery and distribution ERP platform buil
 * **Navigation & Calling:** Direct Google Maps turn-by-turn navigation deep-links and one-tap customer phone calling.
 * **Field Remarks:** Ability to record delivery notes (e.g., gate codes, security handovers, customer absent notes).
 * **Cash & Jar Ledgers:** Real-time visibility of cash in hand and empty jars awaiting evening warehouse handover.
+* **Vendor Agent Controls:** Vendors can confirm agent activation/deactivation. Permanent removal requires zero unsettled cash and jars; pending orders return to the open queue and historical records are retained.
 
 ### 3. Customer Storefront & Account (`/customer`)
 * **Storefront:** Browse vendor products, pricing, and available delivery windows.

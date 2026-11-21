@@ -634,6 +634,133 @@ exports.createAgent = async (req, res) => {
   }
 };
 
+exports.updateAgentStatus = async (req, res) => {
+  try {
+    const { agentId } = req.params;
+    const { isActive } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(agentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid agent ID' });
+    }
+    if (typeof isActive !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'isActive must be a boolean' });
+    }
+
+    const agent = await User.findOneAndUpdate(
+      { _id: agentId, vendorId: req.user._id, role: 'agent' },
+      { $set: { isActive } },
+      { new: true, runValidators: true }
+    );
+    if (!agent) {
+      return res.status(404).json({ success: false, message: 'Delivery agent not found for this vendor' });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Delivery agent ${isActive ? 'activated' : 'deactivated'}.`,
+      data: { id: agent._id, name: agent.name, isActive: agent.isActive }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.deleteAgent = async (req, res) => {
+  let session;
+  try {
+    const { agentId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(agentId)) {
+      return res.status(400).json({ success: false, message: 'Invalid agent ID' });
+    }
+
+    session = await mongoose.startSession();
+    await session.withTransaction(async () => {
+      const agent = await User.findOne({
+        _id: agentId,
+        vendorId: req.user._id,
+        role: 'agent'
+      }).session(session);
+      if (!agent) {
+        const error = new Error('Delivery agent not found for this vendor');
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const pendingCashTotals = await Payment.aggregate([
+        {
+          $match: {
+            vendorId: req.user._id,
+            collectedByAgentId: agent._id,
+            paymentMethod: 'cash',
+            status: 'captured',
+            agentSettlementId: null
+          }
+        },
+        { $group: { _id: null, total: { $sum: '$amount' } } }
+      ]).session(session);
+      const pendingJarTotals = await Order.aggregate([
+        {
+          $match: {
+            vendorId: req.user._id,
+            deliveryAgentId: agent._id,
+            status: 'delivered',
+            bottlesReturned: { $gt: 0 },
+            jarSettlementId: null
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: { $ifNull: ['$bottlesReturned', 0] } }
+          }
+        }
+      ]).session(session);
+      const pendingCash = Number(pendingCashTotals[0]?.total || 0);
+      const pendingJars = Number(pendingJarTotals[0]?.total || 0);
+
+      if (pendingCash > 0 || pendingJars > 0) {
+        const error = new Error(
+          `Settle all outstanding agent balances before removal (cash: ₹${pendingCash.toFixed(2)}, jars: ${pendingJars}).`
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
+      await Order.updateMany(
+        {
+          vendorId: req.user._id,
+          deliveryAgentId: agent._id,
+          status: 'pending'
+        },
+        { $set: { deliveryAgentId: null } },
+        { session }
+      );
+
+      const deletion = await User.deleteOne({
+        _id: agent._id,
+        vendorId: req.user._id,
+        role: 'agent'
+      }, { session });
+      if (deletion.deletedCount !== 1) {
+        const error = new Error('Delivery agent changed while being removed. Please retry.');
+        error.statusCode = 409;
+        throw error;
+      }
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Delivery agent permanently removed. Historical records were retained.'
+    });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  } finally {
+    if (session) await session.endSession();
+  }
+};
+
 exports.assignDeliveryAgent = async (req, res) => {
   try {
     const { orderId } = req.params;

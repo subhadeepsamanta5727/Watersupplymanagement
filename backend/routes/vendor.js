@@ -13,6 +13,8 @@ const {
   deleteProduct,
   getAgents,
   createAgent,
+  updateAgentStatus,
+  deleteAgent,
   assignDeliveryAgent,
   submitAgentCollection,
   submitAgentJars,
@@ -47,6 +49,8 @@ router.post('/expenses', checkSubscription, createExpense);
 router.put('/profile', updateProfile);
 router.get('/agents', getAgents);
 router.post('/agents', checkSubscription, createAgent);
+router.patch('/agents/:agentId/status', updateAgentStatus);
+router.delete('/agents/:agentId', deleteAgent);
 router.post('/agents/:agentId/settlements', submitAgentCollection);
 router.post('/agents/:agentId/jar-settlements', submitAgentJars);
 router.put('/orders/:orderId/agent', checkSubscription, assignDeliveryAgent);
