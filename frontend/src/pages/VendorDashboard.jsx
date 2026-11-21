@@ -60,6 +60,15 @@ const VendorDashboard = () => {
   const [selectedCustomerForPricing, setSelectedCustomerForPricing] = useState(null);
   const [customerCustomPrices, setCustomerCustomPrices] = useState({});
 
+  // Form states - Product Custom Pricing
+  const [showProductCustomPriceModal, setShowProductCustomPriceModal] = useState(false);
+  const [selectedProdForCustomPricing, setSelectedProdForCustomPricing] = useState(null);
+  const [selectedCustForProdPricing, setSelectedCustForProdPricing] = useState('');
+  const [custProdPriceInput, setCustProdPriceInput] = useState('');
+  const [prodCustomPriceLoading, setProdCustomPriceLoading] = useState(false);
+  const [prodCustomPriceError, setProdCustomPriceError] = useState('');
+  const [prodCustomPriceSuccess, setProdCustomPriceSuccess] = useState('');
+
   // Form states - Damaged Jar & Security Deposit Refund
   const [showDamageJarModal, setShowDamageJarModal] = useState(false);
   const [showRefundDepositModal, setShowRefundDepositModal] = useState(false);
@@ -414,6 +423,105 @@ const VendorDashboard = () => {
       }
     } catch (err) {
       setError('Connection failure while saving custom prices');
+    }
+  };
+
+  // Product-specific custom pricing handlers
+  const handleOpenProductCustomPriceModal = (prod) => {
+    setProdCustomPriceError('');
+    setProdCustomPriceSuccess('');
+    setSelectedProdForCustomPricing(prod);
+    setSelectedCustForProdPricing('');
+    setCustProdPriceInput('');
+    setShowProductCustomPriceModal(true);
+  };
+
+  const handleSelectCustomerForProdPricing = (customerId) => {
+    setSelectedCustForProdPricing(customerId);
+    setProdCustomPriceError('');
+    setProdCustomPriceSuccess('');
+    if (!customerId || !selectedProdForCustomPricing) {
+      setCustProdPriceInput('');
+      return;
+    }
+    const cust = customers.find((c) => (c.customerId || c._id) === customerId);
+    const pidStr = selectedProdForCustomPricing._id.toString();
+    const existing = (cust?.customPrices || []).find(
+      (cp) => (cp.productId?._id ? cp.productId._id.toString() : (cp.productId ? cp.productId.toString() : '')) === pidStr
+    );
+    if (existing && existing.price !== undefined && existing.price !== null) {
+      setCustProdPriceInput(existing.price);
+    } else {
+      setCustProdPriceInput('');
+    }
+  };
+
+  const handleSaveProductCustomPrice = async (e) => {
+    e.preventDefault();
+    setProdCustomPriceError('');
+    setProdCustomPriceSuccess('');
+
+    if (!selectedProdForCustomPricing || !selectedCustForProdPricing) {
+      setProdCustomPriceError('Please select a customer.');
+      return;
+    }
+
+    const priceNum = Number(custProdPriceInput);
+    if (custProdPriceInput === '' || isNaN(priceNum) || priceNum < 0) {
+      setProdCustomPriceError('Please enter a valid non-negative selling price.');
+      return;
+    }
+
+    setProdCustomPriceLoading(true);
+    try {
+      const res = await authFetch(`/vendor/products/${selectedProdForCustomPricing._id}/custom-price`, {
+        method: 'POST',
+        body: JSON.stringify({
+          customerId: selectedCustForProdPricing,
+          price: priceNum
+        })
+      });
+
+      if (res.success) {
+        setProdCustomPriceSuccess(res.message || 'Custom price saved successfully!');
+        setSelectedCustForProdPricing('');
+        setCustProdPriceInput('');
+        await fetchData();
+      } else {
+        setProdCustomPriceError(res.message || 'Failed to set custom price');
+      }
+    } catch (err) {
+      setProdCustomPriceError('Connection error while saving custom price');
+    } finally {
+      setProdCustomPriceLoading(false);
+    }
+  };
+
+  const handleRemoveProductCustomPrice = async (customerId) => {
+    if (!selectedProdForCustomPricing) return;
+    setProdCustomPriceError('');
+    setProdCustomPriceSuccess('');
+    setProdCustomPriceLoading(true);
+
+    try {
+      const res = await authFetch(`/vendor/products/${selectedProdForCustomPricing._id}/custom-price/${customerId}`, {
+        method: 'DELETE'
+      });
+
+      if (res.success) {
+        setProdCustomPriceSuccess('Custom price removed. Customer will see standard catalog price.');
+        if (selectedCustForProdPricing === customerId) {
+          setSelectedCustForProdPricing('');
+          setCustProdPriceInput('');
+        }
+        await fetchData();
+      } else {
+        setProdCustomPriceError(res.message || 'Failed to remove custom price');
+      }
+    } catch (err) {
+      setProdCustomPriceError('Connection error while removing custom price');
+    } finally {
+      setProdCustomPriceLoading(false);
     }
   };
 
@@ -2005,6 +2113,22 @@ const VendorDashboard = () => {
                           <div className="mt-0.5 max-w-xs truncate text-xs text-slate-400" title={prod.description}>
                             {prod.description || 'No description'}
                           </div>
+                          {(() => {
+                            const customCount = (customers || []).filter((c) =>
+                              (c.customPrices || []).some((cp) =>
+                                (cp.productId?._id ? cp.productId._id.toString() : (cp.productId ? cp.productId.toString() : '')) === prod._id.toString()
+                              )
+                            ).length;
+                            if (customCount > 0) {
+                              return (
+                                <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                  <Tag size={10} />
+                                  {customCount} special customer rate{customCount > 1 ? 's' : ''}
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
                         </td>
                         <td className="p-4">
                           {prod.isReturnable !== false ? (
@@ -2042,6 +2166,13 @@ const VendorDashboard = () => {
                         </td>
                         <td className="p-4">
                           <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => handleOpenProductCustomPriceModal(prod)}
+                              className="rounded border border-amber-500/20 bg-amber-600/10 px-3 py-1 text-xs font-bold text-amber-400 transition-all hover:border-amber-500 hover:bg-amber-600 hover:text-white cursor-pointer"
+                              title="Set custom selling price for a specific customer"
+                            >
+                              Custom Price
+                            </button>
                             <button
                               onClick={() => {
                                 setEditingProduct(prod);
@@ -4392,6 +4523,212 @@ const VendorDashboard = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PRODUCT-SPECIFIC CUSTOM PRICING */}
+      {showProductCustomPriceModal && selectedProdForCustomPricing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="w-full max-w-lg max-h-[calc(100dvh_-_2rem)] overflow-y-auto glass-panel-glow rounded-2xl p-6 border border-amber-500/30 animate-scale-up">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-marine-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-400">
+                  <Tag size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Set Customer Special Price</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Product: <span className="text-white font-semibold">{selectedProdForCustomPricing.name}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowProductCustomPriceModal(false);
+                  setSelectedProdForCustomPricing(null);
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-marine-800 transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Product Price Reference Card */}
+            <div className="grid grid-cols-2 gap-3 my-4 p-3 rounded-xl bg-marine-950/60 border border-marine-800 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Standard Retail Price</span>
+                <span className="text-base font-extrabold text-emerald-400">Rs. {selectedProdForCustomPricing.price}</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Purchase Cost (COGS)</span>
+                <span className="text-base font-extrabold text-amber-400">Rs. {selectedProdForCustomPricing.purchasePrice || 0}</span>
+              </div>
+            </div>
+
+            {/* Alerts */}
+            {prodCustomPriceError && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex justify-between items-center">
+                <span>{prodCustomPriceError}</span>
+                <button onClick={() => setProdCustomPriceError('')} className="p-1 hover:text-white cursor-pointer"><X size={14} /></button>
+              </div>
+            )}
+            {prodCustomPriceSuccess && (
+              <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs flex justify-between items-center">
+                <span>{prodCustomPriceSuccess}</span>
+                <button onClick={() => setProdCustomPriceSuccess('')} className="p-1 hover:text-white cursor-pointer"><X size={14} /></button>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleSaveProductCustomPrice} className="space-y-4">
+              {/* Field 1: Customer selector */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  1. Select Customer <span className="text-rose-400">*</span>
+                </label>
+                <select
+                  required
+                  value={selectedCustForProdPricing}
+                  onChange={(e) => handleSelectCustomerForProdPricing(e.target.value)}
+                  className="w-full rounded-xl bg-marine-900 border border-marine-800 px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500 cursor-pointer"
+                >
+                  <option value="">-- Choose a Customer ({customers.length} available) --</option>
+                  {customers.map((c) => {
+                    const cid = c.customerId || c._id;
+                    const pidStr = selectedProdForCustomPricing._id.toString();
+                    const hasSpecial = (c.customPrices || []).some(
+                      (cp) => (cp.productId?._id ? cp.productId._id.toString() : (cp.productId ? cp.productId.toString() : '')) === pidStr
+                    );
+                    return (
+                      <option key={cid} value={cid}>
+                        {c.name} ({c.phone}){hasSpecial ? ' — Special Rate Active' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Field 2: Custom Selling Price */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  2. Special Selling Price for this Customer (Rs.) <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  required
+                  value={custProdPriceInput}
+                  onChange={(e) => setCustProdPriceInput(e.target.value)}
+                  placeholder={`Standard price is Rs. ${selectedProdForCustomPricing.price}`}
+                  className="w-full rounded-xl bg-marine-900 border border-marine-800 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Only this selected customer will see this price in their account. Other customers will see the standard Rs. {selectedProdForCustomPricing.price}.
+                </p>
+              </div>
+
+              {/* Live Profit Preview */}
+              {custProdPriceInput !== '' && !isNaN(Number(custProdPriceInput)) && (
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-1">
+                  <div className="flex justify-between items-center text-amber-300 font-bold">
+                    <span>Profit per unit:</span>
+                    <span>
+                      Rs. {(Number(custProdPriceInput) - Number(selectedProdForCustomPricing.purchasePrice || 0)).toFixed(1)}
+                      {' '}({Number(custProdPriceInput) > 0 ? (((Number(custProdPriceInput) - Number(selectedProdForCustomPricing.purchasePrice || 0)) / Number(custProdPriceInput)) * 100).toFixed(0) : 0}% margin)
+                    </span>
+                  </div>
+                  {Number(custProdPriceInput) < Number(selectedProdForCustomPricing.purchasePrice || 0) && (
+                    <p className="text-rose-400 text-[11px] font-semibold">
+                      ⚠️ Warning: Selling price is below your purchase cost (Rs. {selectedProdForCustomPricing.purchasePrice || 0}).
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowProductCustomPriceModal(false);
+                    setSelectedProdForCustomPricing(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-marine-900/40 hover:bg-marine-800 border border-marine-800 transition-colors cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={prodCustomPriceLoading || !selectedCustForProdPricing || custProdPriceInput === ''}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-500 border border-amber-500 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-amber-950/40"
+                >
+                  {prodCustomPriceLoading ? 'Saving…' : 'Save Special Price'}
+                </button>
+              </div>
+            </form>
+
+            {/* Existing Customers with Special Rates for this product */}
+            <div className="mt-6 pt-5 border-t border-marine-800/80">
+              <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">
+                Active Special Rates for {selectedProdForCustomPricing.name}
+              </h3>
+              {(() => {
+                const pidStr = selectedProdForCustomPricing._id.toString();
+                const activeList = (customers || []).filter((c) =>
+                  (c.customPrices || []).some(
+                    (cp) => (cp.productId?._id ? cp.productId._id.toString() : (cp.productId ? cp.productId.toString() : '')) === pidStr
+                  )
+                ).map((c) => {
+                  const cp = (c.customPrices || []).find(
+                    (x) => (x.productId?._id ? x.productId._id.toString() : (x.productId ? x.productId.toString() : '')) === pidStr
+                  );
+                  return {
+                    customerId: c.customerId || c._id,
+                    name: c.name,
+                    phone: c.phone,
+                    price: cp ? cp.price : 0
+                  };
+                });
+
+                if (activeList.length === 0) {
+                  return (
+                    <p className="text-xs text-slate-500 italic p-3 rounded-xl bg-marine-950/40 border border-marine-800/60">
+                      No customer-specific rates set yet. All customers see standard catalog price (Rs. {selectedProdForCustomPricing.price}).
+                    </p>
+                  );
+                }
+
+                return (
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                    {activeList.map((item) => (
+                      <div
+                        key={item.customerId}
+                        className="flex items-center justify-between p-2.5 rounded-xl bg-marine-950/50 border border-marine-800/70 text-xs"
+                      >
+                        <div>
+                          <span className="font-bold text-white">{item.name}</span>
+                          <span className="text-slate-400 ml-2 font-mono text-[11px]">({item.phone})</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-extrabold text-amber-400 text-sm">Rs. {item.price}</span>
+                          <button
+                            type="button"
+                            disabled={prodCustomPriceLoading}
+                            onClick={() => handleRemoveProductCustomPrice(item.customerId)}
+                            className="px-2 py-1 rounded-lg text-[10px] font-semibold text-rose-400 hover:text-white bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 transition-all cursor-pointer"
+                            title="Revert this customer to standard price"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}

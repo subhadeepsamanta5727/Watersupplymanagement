@@ -17,6 +17,8 @@ const {
   submitAgentCollection,
   submitAgentJars,
   updateCustomerCustomPrices,
+  setProductCustomPriceForCustomer,
+  removeProductCustomPriceForCustomer,
   getProfitLossAnalytics,
   reportJarDamage,
   refundSecurityDeposit
@@ -31,6 +33,8 @@ router.post('/products', checkSubscription, addProduct);
 router.get('/products', getProducts);
 router.put('/products/:id', checkSubscription, updateProduct);
 router.delete('/products/:id', checkSubscription, deleteProduct);
+router.post('/products/:productId/custom-price', checkSubscription, setProductCustomPriceForCustomer);
+router.delete('/products/:productId/custom-price/:customerId', checkSubscription, removeProductCustomPriceForCustomer);
 router.post('/customers', checkSubscription, addCustomer);
 router.get('/customers', getCustomers);
 router.put('/customers/:customerId', checkSubscription, updateCustomerLedger);

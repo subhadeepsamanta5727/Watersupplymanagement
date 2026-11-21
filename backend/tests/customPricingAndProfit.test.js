@@ -170,3 +170,24 @@ test('profit and loss: calculates revenue, COGS, gross profit, and margin accura
   assert.equal(def.revenue, 100);
   assert.equal(def.profit, 40);
 });
+
+test('product custom price: updates or sets custom price for specific product and removes cleanly', () => {
+  let customPrices = [
+    { productId: 'prod_999', price: 25 }
+  ];
+
+  // Set price for prod_123 to 45
+  const productId = 'prod_123';
+  const newPrice = 45;
+  customPrices = customPrices.filter((cp) => cp.productId !== productId);
+  customPrices.push({ productId, price: newPrice });
+
+  assert.equal(customPrices.length, 2);
+  const item = customPrices.find((cp) => cp.productId === productId);
+  assert.equal(item.price, 45);
+
+  // Remove price for prod_123
+  customPrices = customPrices.filter((cp) => cp.productId !== productId);
+  assert.equal(customPrices.length, 1);
+  assert.equal(customPrices[0].productId, 'prod_999');
+});

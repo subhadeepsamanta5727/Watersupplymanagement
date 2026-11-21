@@ -877,6 +877,97 @@ exports.updateCustomerCustomPrices = async (req, res) => {
   }
 };
 
+// @desc    Set or update a customer-specific custom price for a product
+// @route   POST /api/v1/vendor/products/:productId/custom-price
+// @access  Private (Vendor only)
+exports.setProductCustomPriceForCustomer = async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { customerId, price } = req.body;
+    const vendorId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(productId) || !mongoose.Types.ObjectId.isValid(customerId)) {
+      return res.status(400).json({ success: false, message: 'Invalid product or customer ID' });
+    }
+
+    const priceNum = Number(price);
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      return res.status(400).json({ success: false, message: 'Price must be a non-negative number' });
+    }
+
+    const product = await Product.findOne({ _id: productId, vendorId });
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Product not found for this vendor' });
+    }
+
+    const relation = await VendorCustomer.findOne({ vendorId, customerId });
+    if (!relation) {
+      return res.status(404).json({ success: false, message: 'Customer relationship not found' });
+    }
+
+    const customPrices = (relation.customPrices || []).filter(
+      (cp) => cp.productId && cp.productId.toString() !== productId.toString()
+    );
+    customPrices.push({
+      productId: new mongoose.Types.ObjectId(productId),
+      price: priceNum
+    });
+
+    relation.customPrices = customPrices;
+    await relation.save();
+
+    res.status(200).json({
+      success: true,
+      message: `Custom price of Rs. ${priceNum} set successfully`,
+      data: {
+        relationId: relation._id,
+        customerId: relation.customerId,
+        productId,
+        price: priceNum,
+        customPrices: relation.customPrices
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Remove a customer-specific custom price for a product
+// @route   DELETE /api/v1/vendor/products/:productId/custom-price/:customerId
+// @access  Private (Vendor only)
+exports.removeProductCustomPriceForCustomer = async (req, res) => {
+  try {
+    const { productId, customerId } = req.params;
+    const vendorId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(productId) || !mongoose.Types.ObjectId.isValid(customerId)) {
+      return res.status(400).json({ success: false, message: 'Invalid product or customer ID' });
+    }
+
+    const relation = await VendorCustomer.findOne({ vendorId, customerId });
+    if (!relation) {
+      return res.status(404).json({ success: false, message: 'Customer relationship not found' });
+    }
+
+    relation.customPrices = (relation.customPrices || []).filter(
+      (cp) => cp.productId && cp.productId.toString() !== productId.toString()
+    );
+    await relation.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Custom price removed successfully',
+      data: {
+        relationId: relation._id,
+        customerId: relation.customerId,
+        customPrices: relation.customPrices
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Report broken / damaged / lost jar with vendor penalty
 // @route   POST /api/v1/vendor/customers/:customerId/damage
 // @access  Private (Vendor only)
