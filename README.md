@@ -26,7 +26,7 @@ A production-ready, full-stack water delivery and distribution ERP platform buil
 * **Storefront:** Browse vendor products, pricing, and available delivery windows.
 * **Flexible Ordering:** Request deliveries with custom drop-off addresses, delivery slot preferences, and declaration of empty jars ready for return.
 * **Pending Order Controls:** Edit products, quantities, returned jars, or delivery slot, and cancel a pending order before dispatch.
-* **Phone OTP Login:** Firebase phone verification in production; development uses demo OTP `123456` while SMTP credentials are unconfigured, including customer registration and agent login.
+* **Phone OTP Login:** Firebase phone verification in production; development uses demo OTP `123456` while SMTP credentials are unconfigured, including customer registration and agent login. Outside development/test, demo OTP is available only to test phone numbers explicitly listed in the backend `DEMO_OTP_PHONES` environment variable.
 * **Online Bill Payment:** Integrated Razorpay checkout to clear outstanding balances digitally or pay on delivery.
 * **Order & Statement History:** Complete transparency on delivered jars, returned empties, and payment transaction receipts.
 
@@ -103,7 +103,7 @@ Before deploying, prepare:
 
 After the Blueprint creates both services, configure these additional environment variables in the Render dashboard if those features are needed:
 
-* **API service:** `FIREBASE_PROJECT_ID`, `FIREBASE_PRIVATE_KEY_ID`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_CLIENT_X509_CERT_URL` for Firebase phone authentication; SMTP settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_EMAIL`, `SMTP_PASSWORD`, `FROM_NAME`, and `FROM_EMAIL`) for password-reset email.
+* **API service:** `FIREBASE_PROJECT_ID`, `FIREBASE_PRIVATE_KEY_ID`, `FIREBASE_PRIVATE_KEY`, `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_CLIENT_X509_CERT_URL` for Firebase phone authentication; SMTP settings (`SMTP_HOST`, `SMTP_PORT`, `SMTP_EMAIL`, `SMTP_PASSWORD`, `FROM_NAME`, and `FROM_EMAIL`) for password-reset email. To use demo OTP `123456` for designated test accounts, set `DEMO_OTP_PHONES` to a comma-separated list of their 10-digit test phone numbers. Do not include real customer or agent numbers; all other numbers continue to use Firebase.
 * **Static site:** `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, and `VITE_FIREBASE_APP_ID` for Firebase phone authentication.
 
 Use Render's environment-variable dashboard for credentials; do not commit `.env` files or Firebase service-account JSON. The Firebase web configuration is used by the browser, but the Firebase Admin private key must remain secret. Use a fresh production database, or remove/change any existing demo accounts before launch. Production no longer seeds the development demo vendor or fixed default credentials; create a vendor through the business registration page after deployment.

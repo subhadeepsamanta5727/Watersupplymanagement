@@ -70,7 +70,7 @@ const Login = () => {
       setDemoOtpEnabled(mode.demoOtpEnabled === true);
       if (mode.demoOtpEnabled) {
         setOtpSent(true);
-        setMessage('Development demo OTP is active because SMTP credentials are not configured. Enter 123456.');
+        setMessage('Demo OTP is active for this test phone. Enter 123456.');
         return;
       }
 

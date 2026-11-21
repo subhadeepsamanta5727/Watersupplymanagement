@@ -21,15 +21,15 @@ const validatePhone = (phone) => {
 const getPhoneFromIdToken = async (idToken) => {
   let phone;
   if (typeof idToken === 'string' && idToken.startsWith('DEV_TOKEN_')) {
-    if (!isDemoOtpEnabled()) {
-      const error = new Error('Demo OTP authentication is disabled');
-      error.code = 'DEMO_OTP_DISABLED';
-      throw error;
-    }
     phone = getDemoOtpPhone(idToken);
     if (!phone) {
       const error = new Error('Invalid demo OTP');
       error.code = 'INVALID_DEMO_OTP';
+      throw error;
+    }
+    if (!isDemoOtpEnabled(phone)) {
+      const error = new Error('Demo OTP authentication is disabled');
+      error.code = 'DEMO_OTP_DISABLED';
       throw error;
     }
   }
@@ -183,7 +183,7 @@ exports.sendOtp = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits' });
   }
 
-  const demoOtpEnabled = isDemoOtpEnabled();
+  const demoOtpEnabled = isDemoOtpEnabled(phone);
   res.status(200).json({
     success: true,
     demoOtpEnabled,
