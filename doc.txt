@@ -34,8 +34,9 @@ It solves core industry pain points:
 - Double-ledger accounting: Outstanding monetary balance (INR) AND outstanding
   physical assets (reusable polycarbonate water jars).
 - Multi-tier SaaS subscriptions for water distributors with customer limits.
-- Field operations: Real-time run-sheets for delivery drivers, self-claiming
-  routes, in-field cash collection, and end-of-day warehouse reconciliations.
+- Field operations: Shared delivery run-sheets where any agent can complete
+  their vendor's open orders, in-field cash collection, and end-of-day
+  warehouse reconciliations.
 - Direct-to-distributor online payments via Razorpay integration.
 
 1.2. Technology Stack
@@ -72,10 +73,10 @@ The system defines 4 distinct roles enforced via JWT role claims and middleware:
 |                | platform Razorpay gateway keys.                             |
 | vendor         | Water Distributor / Business Owner. Manages bottle catalog, |
 |                | customer directory, ledger adjustments, delivery staff,     |
-|                | shift reconciliations, delivery slots, and own Razorpay key.|
+|                | shift reconciliations, delivery slots, and UPI ID.          |
 | agent          | Field Delivery Agent / Driver. Mobile-first dashboard to   |
-|                | view open deliveries, self-claim orders, record bottles     |
-|                | delivered/returned, collect cash on delivery.               |
+|                | view and complete any vendor delivery, optionally claim an  |
+|                | order, record jars delivered/returned, collect payments.    |
 | customer       | Consumer / Household / Office. Orders water, tracks delivery|
 |                | status, selects delivery slots, manages up to 5 addresses,  |
 |                | views bottle ledger, and pays outstanding balance online.   |
@@ -407,27 +408,24 @@ Distributor catalog items:
 5.1. Order Lifecycle & Fulfillment
 --------------------------------------------------------------------------------
 ```
-[Customer Places Order] ───> Status: PENDING (unassigned)
+[Customer Places Order] ───> Status: PENDING
                                    │
                     ┌──────────────┴──────────────┐
                     ▼                             ▼
-       [Vendor Assigns to Agent]       [Agent Self-Claims Order]
+       [Agent optionally claims]       [Any vendor agent delivers]
                     │                             │
                     └──────────────┬──────────────┘
                                    │
                                    ▼
-                       Status: PENDING (claimed)
+                     Transactionally deliver or cancel
                                    │
                     ┌──────────────┴──────────────┐
-                    ▼                             ▼
-         [Delivery Agent Delivers]       [Order Cancelled]
-                    │                             │
                     ▼                             ▼
          Status: DELIVERED               Status: CANCELLED
          - Deducts product stock         - Reverts balance & jars
          - Updates customer balance        (if previously delivered)
          - Updates jar ledger
-         - If Cash: marks Payment
+         - Records collected payment
            with collectedByAgentId
 ```
 
@@ -505,7 +503,7 @@ Module 3: Platform Administration (9 Endpoints)
 - DELETE /admin/vendors                        [Admin] Cascade bulk delete all vendors.
 - POST   /admin/assign-subscription            [Admin] Override vendor subscription plan.
 
-Module 4: Vendor / Distributor Management (15 Endpoints)
+Module 4: Vendor / Distributor Management (17 Endpoints)
 - GET    /vendor/subscription                  [Vendor] Check subscription & quota usage.
 - POST   /vendor/products                      [Vendor] Add new product to catalog.
 - GET    /vendor/products                      [Vendor/Customer] List vendor products.
@@ -517,6 +515,8 @@ Module 4: Vendor / Distributor Management (15 Endpoints)
 - PUT    /vendor/profile                       [Vendor] Update details, slots, Razorpay keys.
 - GET    /vendor/plans                         [Vendor] View paid subscription tiers.
 - GET    /vendor/agents                        [Vendor] List staff with live shift totals.
+- GET    /vendor/profit-loss                   [Vendor] View sales, costs, expenses, and profit by period.
+- POST   /vendor/expenses                      [Vendor] Record an operating expense.
 - POST   /vendor/agents                        [Vendor] Register new delivery staff member.
 - POST   /vendor/agents/:agentId/settlements   [Vendor] Settle cash collected by agent.
 - POST   /vendor/agents/:agentId/jar-settlements [Vendor] Settle empty jars returned by agent.
@@ -534,8 +534,10 @@ Module 6: Customer Portal (5 Endpoints)
 - POST   /customer/change-phone-request        [Customer] Send OTP to new mobile number.
 - PUT    /customer/change-phone-verify         [Customer] Verify OTP and update phone.
 
-Module 7: Orders, Deliveries & PDF Statements (6 Endpoints)
+Module 7: Orders, Deliveries & PDF Statements (8 Endpoints)
 - POST   /orders                               [Vendor/Customer] Create order / delivery.
+- PUT    /orders/:id                           [Customer] Edit products, return jars, and slot on a pending order.
+- PUT    /orders/:id/cancel                    [Customer] Cancel own pending order and release reserved stock.
 - PUT    /orders/:id/status                    [Vendor/Agent] Fulfill order, log cash/jars.
 - POST   /orders/payments                      [Vendor] Record offline cash received.
 - GET    /orders                               [Vendor/Customer/Agent] Query order history.
@@ -628,7 +630,8 @@ Designed specifically for drivers on mobile phones:
 - Big touch targets, card layout, high-contrast dark theme.
 - Tap-to-Call (`tel:+91...`) customer phone directly from card.
 - Tap-to-Navigate opens Google Maps with customer coordinates/address.
-- One-click Claim / Release buttons with optimistic concurrency lock.
+- Optional Claim / Release buttons; all agents may complete open deliveries for
+  their vendor, and transactional status updates prevent duplicate completion.
 - Simple delivery completion modal (Delivered Cans, Returned Empty Cans, Cash Collected).
 - Shift status cards: Pending cash in hand, pending jars in truck, recent settlements.
 
@@ -652,7 +655,8 @@ node tests/secretEncryption.test.js
 
 Test Coverage Breakdown:
 1. `deliveryAgentAccess.test.js`:
-   - Asserts agents can only view/modify orders assigned by their employing vendor.
+   - Asserts agents can complete any order belonging to their employing vendor,
+     regardless of assignment.
    - Asserts agents cannot manipulate unauthorized accounting fields.
    - Validates in-field cash collection ceilings.
 2. `indiaDate.test.js`:

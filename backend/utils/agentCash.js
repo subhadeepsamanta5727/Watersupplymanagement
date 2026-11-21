@@ -18,4 +18,20 @@ const validateAgentCashCollection = (amount, deliveryCharge, dueBalance) => {
   return cash;
 };
 
-module.exports = { validateAgentCashCollection };
+const validateAgentPaymentCollection = (paymentMethod, amount, deliveryCharge, dueBalance) => {
+  if (!['cash', 'online', 'due'].includes(paymentMethod)) {
+    const error = new Error('Payment method must be cash, online, or due');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const collected = validateAgentCashCollection(amount, deliveryCharge, dueBalance);
+  if (paymentMethod === 'due' && collected > 0) {
+    const error = new Error('Collected amount must be zero when the payment method is due');
+    error.statusCode = 400;
+    throw error;
+  }
+  return collected;
+};
+
+module.exports = { validateAgentCashCollection, validateAgentPaymentCollection };

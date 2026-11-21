@@ -1,10 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  isAssignedAgentForOrder,
+  isAgentForVendorOrder,
   canAgentUpdateOrder
 } = require('../utils/deliveryAgentAccess');
-const { validateAgentCashCollection } = require('../utils/agentCash');
+const {
+  validateAgentCashCollection,
+  validateAgentPaymentCollection
+} = require('../utils/agentCash');
 
 const agent = {
   _id: 'agent-1',
@@ -17,17 +20,15 @@ const order = {
   deliveryAgentId: 'agent-1'
 };
 
-test('allows an agent to access an order assigned by their vendor', () => {
-  assert.equal(isAssignedAgentForOrder(agent, order), true);
+test('allows agents to complete any delivery belonging to their vendor', () => {
+  assert.equal(isAgentForVendorOrder(agent, order), true);
+  assert.equal(isAgentForVendorOrder(agent, { vendorId: 'vendor-1', deliveryAgentId: null }), true);
+  assert.equal(isAgentForVendorOrder(agent, { ...order, deliveryAgentId: 'agent-2' }), true);
+  assert.equal(isAgentForVendorOrder(agent, { ...order, vendorId: 'vendor-2' }), false);
+  assert.equal(isAgentForVendorOrder({ ...agent, role: 'customer' }, order), false);
 });
 
-test('rejects orders assigned to another agent or belonging to another vendor', () => {
-  assert.equal(isAssignedAgentForOrder(agent, { ...order, deliveryAgentId: 'agent-2' }), false);
-  assert.equal(isAssignedAgentForOrder(agent, { ...order, vendorId: 'vendor-2' }), false);
-  assert.equal(isAssignedAgentForOrder({ ...agent, role: 'customer' }, order), false);
-});
-
-test('allows agents to submit only a delivered status and no accounting fields', () => {
+test('allows agents to submit delivery quantities and supported collection methods only', () => {
   assert.equal(canAgentUpdateOrder({ status: 'delivered' }), true);
   assert.equal(canAgentUpdateOrder({ status: 'cancelled' }), false);
   assert.equal(canAgentUpdateOrder({
@@ -35,9 +36,12 @@ test('allows agents to submit only a delivered status and no accounting fields',
     products: [{ productId: 'product-1', deliveredQuantity: 2 }],
     bottlesReturned: 1,
     cashCollected: 25,
+    paymentMethod: 'cash',
     deliveryNotes: 'Left at security gate'
   }), true);
-  assert.equal(canAgentUpdateOrder({ status: 'delivered', paymentMethod: 'cash' }), false);
+  assert.equal(canAgentUpdateOrder({ status: 'delivered', paymentMethod: 'online' }), true);
+  assert.equal(canAgentUpdateOrder({ status: 'delivered', paymentMethod: 'due' }), true);
+  assert.equal(canAgentUpdateOrder({ status: 'delivered', paymentMethod: 'other' }), false);
   assert.equal(canAgentUpdateOrder({
     status: 'delivered',
     products: [{ productId: 'product-1', deliveredQuantity: 1.5 }]
@@ -49,4 +53,11 @@ test('records partial cash without allowing collection above delivery charge or 
   assert.equal(validateAgentCashCollection(undefined, 100, 80), 0);
   assert.throws(() => validateAgentCashCollection(101, 100, 200), { statusCode: 400 });
   assert.throws(() => validateAgentCashCollection(50, 100, 25), { statusCode: 400 });
+});
+
+test('due payment method leaves the collection at zero', () => {
+  assert.equal(validateAgentPaymentCollection('due', 0, 100, 100), 0);
+  assert.throws(() => validateAgentPaymentCollection('due', 10, 100, 100), { statusCode: 400 });
+  assert.equal(validateAgentPaymentCollection('online', 25, 100, 100), 25);
+  assert.throws(() => validateAgentPaymentCollection('other', 0, 100, 100), { statusCode: 400 });
 });

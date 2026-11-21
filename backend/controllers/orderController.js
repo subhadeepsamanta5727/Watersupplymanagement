@@ -8,13 +8,14 @@ const VendorSubscription = require('../models/VendorSubscription');
 const { generateReportPDF } = require('../utils/pdfGenerator');
 const { parsePagination } = require('../utils/pagination');
 const {
-  isAssignedAgentForOrder,
+  isAgentForVendorOrder,
   canAgentUpdateOrder
 } = require('../utils/deliveryAgentAccess');
-const { validateAgentCashCollection } = require('../utils/agentCash');
+const { validateAgentPaymentCollection } = require('../utils/agentCash');
 const {
   allocateDeliveredQuantities,
   getRequestedQuantity,
+  getPendingOrderQuantityDeltas,
   validateDeliveredQuantities,
   validateReturnedJarCount
 } = require('../utils/orderQuantities');
@@ -124,7 +125,7 @@ exports.createOrder = async (req, res) => {
           throw createHttpError(400, 'Customer is not connected to this vendor');
         }
       }
-      const finalReturned = orderStatus === 'delivered'
+      const deliveredReturned = orderStatus === 'delivered'
         ? validateReturnedJarCount(declaredReturned, relation.bottlesOutstanding, declaredDelivered)
         : 0;
 
@@ -175,6 +176,16 @@ exports.createOrder = async (req, res) => {
           isReturnable: dbProduct.isReturnable !== false
         };
       });
+      const requestedReturnableQuantity = orderProducts
+        .filter((item) => item.isReturnable)
+        .reduce((sum, item) => sum + item.quantity, 0);
+      const finalReturned = orderStatus === 'delivered'
+        ? deliveredReturned
+        : validateReturnedJarCount(
+          declaredReturned,
+          relation.bottlesOutstanding,
+          requestedReturnableQuantity
+        );
 
       // Calculate security deposit if this is customer's first returnable jar order
       let depositCharged = 0;
@@ -259,6 +270,7 @@ exports.createOrder = async (req, res) => {
             { session }
           );
         }
+        await relation.save({ session });
       } else if (orderStatus === 'delivered') {
         const returnableDelivered = orderProducts
           .filter((item) => item.isReturnable !== false)
@@ -298,6 +310,253 @@ exports.createOrder = async (req, res) => {
   }
 };
 
+const hasOtherReturnableOrder = async (order, session) => Boolean(await Order.exists({
+  _id: { $ne: order._id },
+  vendorId: order.vendorId,
+  customerId: order.customerId,
+  status: { $in: ['pending', 'delivered'] },
+  products: { $elemMatch: { isReturnable: { $ne: false } } }
+}).session(session));
+
+const releasePendingOrder = async (order, relation, session) => {
+  for (const item of order.products) {
+    const requestedQty = getRequestedQuantity(item);
+    if (requestedQty <= 0) continue;
+    const product = await Product.findById(item.productId).session(session);
+    if (!product) continue;
+    product.stock += requestedQty;
+    product.pendingDeliveryStock = Math.max(0, (product.pendingDeliveryStock || 0) - requestedQty);
+    product.isActive = product.stock > 0;
+    await product.save({ session });
+  }
+
+  const pendingReturnableOrders = await Order.find({
+    _id: { $ne: order._id },
+    vendorId: order.vendorId,
+    customerId: order.customerId,
+    status: 'pending',
+    products: { $elemMatch: { isReturnable: { $ne: false } } }
+  }).sort({ createdAt: 1 }).session(session);
+  const cancelledOrderDeposit = Number(order.securityDepositCharged || 0);
+  const depositAlreadyAssigned = pendingReturnableOrders.some(
+    (pendingOrder) => Number(pendingOrder.securityDepositCharged || 0) > 0
+  );
+  const replacementDepositOrder = cancelledOrderDeposit > 0 && !depositAlreadyAssigned
+    ? pendingReturnableOrders[0]
+    : null;
+
+  if (replacementDepositOrder) {
+    replacementDepositOrder.securityDepositCharged =
+      Number(replacementDepositOrder.securityDepositCharged || 0) + cancelledOrderDeposit;
+    replacementDepositOrder.totalAmount =
+      Number(replacementDepositOrder.totalAmount || 0) + cancelledOrderDeposit;
+    await replacementDepositOrder.save({ session });
+  } else {
+    relation.securityDeposit = Math.max(
+      0,
+      Number(relation.securityDeposit || 0) - cancelledOrderDeposit
+    );
+  }
+  relation.hasOrderedReturnable = await hasOtherReturnableOrder(order, session);
+  order.status = 'cancelled';
+};
+
+// @desc    Edit a customer's pending order
+// @route   PUT /api/v1/orders/:id
+// @access  Private (Customer only)
+exports.updateCustomerPendingOrder = async (req, res) => {
+  let session;
+  try {
+    const { products, bottlesReturned, deliverySlot } = req.body || {};
+    const allowedFields = new Set(['products', 'bottlesReturned', 'deliverySlot']);
+    if (Object.keys(req.body || {}).some((key) => !allowedFields.has(key))) {
+      return res.status(400).json({ success: false, message: 'Only products, returned jars, and delivery slot can be edited' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid order ID' });
+    }
+    if (!Array.isArray(products) || products.length === 0 ||
+        products.some((item) => !item || !mongoose.Types.ObjectId.isValid(item.productId) ||
+          !Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0) ||
+        new Set(products.map((item) => item.productId.toString())).size !== products.length) {
+      return res.status(400).json({ success: false, message: 'Choose at least one valid product with a positive whole-number quantity' });
+    }
+    if (!Number.isInteger(Number(bottlesReturned)) || Number(bottlesReturned) < 0 ||
+        typeof deliverySlot !== 'string' || !deliverySlot.trim()) {
+      return res.status(400).json({ success: false, message: 'Return jar count or delivery slot is invalid' });
+    }
+
+    session = await mongoose.startSession();
+    let order;
+    await session.withTransaction(async () => {
+      order = await Order.findOne({
+        _id: req.params.id,
+        customerId: req.user._id
+      }).session(session);
+      if (!order) throw createHttpError(404, 'Order not found');
+      if (order.status !== 'pending') {
+        throw createHttpError(400, 'Only pending orders can be edited');
+      }
+
+      const relation = await VendorCustomer.findOne({
+        vendorId: order.vendorId,
+        customerId: req.user._id
+      }).session(session);
+      if (!relation) throw createHttpError(404, 'Customer relationship not found');
+
+      const changedProductIds = [...new Set([
+        ...order.products.map((item) => item.productId.toString()),
+        ...products.map((item) => item.productId.toString())
+      ])];
+      const dbProducts = await Product.find({
+        _id: { $in: changedProductIds },
+        vendorId: order.vendorId
+      }).session(session);
+      const productById = new Map(dbProducts.map((product) => [product._id.toString(), product]));
+      if (productById.size !== changedProductIds.length) {
+        throw createHttpError(404, 'One or more products are no longer available from this vendor');
+      }
+
+      const customPriceMap = new Map(
+        (relation.customPrices || []).map((customPrice) => [
+          customPrice.productId?.toString(),
+          customPrice.price
+        ])
+      );
+      const updatedProducts = products.map((item) => {
+        const product = productById.get(item.productId.toString());
+        const customPrice = customPriceMap.get(product._id.toString());
+        return {
+          productId: product._id,
+          name: product.name,
+          quantity: Number(item.quantity),
+          requestedQuantity: Number(item.quantity),
+          price: customPrice !== undefined && customPrice !== null
+            ? Number(customPrice)
+            : Number(product.price),
+          purchasePrice: Number(product.purchasePrice || 0),
+          isReturnable: product.isReturnable !== false
+        };
+      });
+
+      for (const { productId, delta } of getPendingOrderQuantityDeltas(order.products, updatedProducts)) {
+        const filter = { _id: productId, vendorId: order.vendorId };
+        const update = delta > 0
+          ? {
+            $inc: { stock: -delta, pendingDeliveryStock: delta },
+            $set: { isActive: false }
+          }
+          : {
+            $inc: { stock: -delta, pendingDeliveryStock: delta }
+          };
+        if (delta > 0) filter.stock = { $gte: delta };
+        else filter.pendingDeliveryStock = { $gte: -delta };
+
+        const updatedProduct = await Product.findOneAndUpdate(filter, update, {
+          new: true,
+          session
+        });
+        if (!updatedProduct) {
+          throw createHttpError(409, `Insufficient stock or reservation for ${productById.get(productId).name}`);
+        }
+        updatedProduct.isActive = updatedProduct.stock > 0;
+        await updatedProduct.save({ session });
+      }
+
+      const returnableQuantity = updatedProducts
+        .filter((item) => item.isReturnable)
+        .reduce((sum, item) => sum + item.quantity, 0);
+      const updatedReturned = validateReturnedJarCount(
+        bottlesReturned,
+        relation.bottlesOutstanding,
+        returnableQuantity
+      );
+      const hasOtherReturnable = await hasOtherReturnableOrder(order, session);
+      const hasReturnableProduct = updatedProducts.some((item) => item.isReturnable);
+      const updatedDeposit = hasOtherReturnable
+        ? Number(order.securityDepositCharged || 0)
+        : hasReturnableProduct
+          ? updatedProducts.reduce((sum, item) => {
+            const product = productById.get(item.productId.toString());
+            return sum + (item.isReturnable ? Number(product.securityDeposit || 0) * item.quantity : 0);
+          }, 0)
+          : 0;
+
+      relation.securityDeposit = Math.max(
+        0,
+        Number(relation.securityDeposit || 0) -
+          Number(order.securityDepositCharged || 0) +
+          updatedDeposit
+      );
+      relation.hasOrderedReturnable = hasOtherReturnable || hasReturnableProduct;
+      order.products = updatedProducts;
+      order.bottlesReturned = updatedReturned;
+      order.deliverySlot = deliverySlot.trim();
+      order.securityDepositCharged = updatedDeposit;
+      order.totalAmount = updatedProducts.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        updatedDeposit
+      );
+
+      await relation.save({ session });
+      await order.save({ session });
+    });
+
+    res.status(200).json({ success: true, data: order });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  } finally {
+    if (session) await session.endSession();
+  }
+};
+
+// @desc    Cancel a customer's pending order
+// @route   PUT /api/v1/orders/:id/cancel
+// @access  Private (Customer only)
+exports.cancelCustomerOrder = async (req, res) => {
+  let session;
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid order ID' });
+    }
+
+    session = await mongoose.startSession();
+    let order;
+    await session.withTransaction(async () => {
+      order = await Order.findOne({
+        _id: req.params.id,
+        customerId: req.user._id
+      }).session(session);
+      if (!order) throw createHttpError(404, 'Order not found');
+      if (order.status !== 'pending') {
+        throw createHttpError(400, 'Only pending orders can be cancelled');
+      }
+
+      const relation = await VendorCustomer.findOne({
+        vendorId: order.vendorId,
+        customerId: req.user._id
+      }).session(session);
+      if (!relation) throw createHttpError(404, 'Customer relationship not found');
+
+      await releasePendingOrder(order, relation, session);
+      await relation.save({ session });
+      await order.save({ session });
+    });
+
+    res.status(200).json({ success: true, data: order });
+  } catch (error) {
+    if (error.statusCode) {
+      return res.status(error.statusCode).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: error.message });
+  } finally {
+    if (session) await session.endSession();
+  }
+};
+
 // @desc    Update Order Status (e.g. Pending -> Delivered)
 // @route   PUT /api/v1/orders/:id/status
 // @access  Private (Vendor only)
@@ -311,7 +570,7 @@ exports.updateOrderStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Status must be delivered or cancelled' });
     }
     if (isAgent && !canAgentUpdateOrder(body)) {
-      return res.status(403).json({ success: false, message: 'Agents can only mark assigned orders as delivered' });
+      return res.status(403).json({ success: false, message: 'Agents can only submit delivery completion fields' });
     }
 
     session = await mongoose.startSession();
@@ -320,7 +579,7 @@ exports.updateOrderStatus = async (req, res) => {
       order = await Order.findById(req.params.id).session(session);
       if (!order) throw createHttpError(404, 'Order not found');
       if (isAgent) {
-        if (!isAssignedAgentForOrder(req.user, order)) {
+        if (!isAgentForVendorOrder(req.user, order)) {
           throw createHttpError(403, 'Not authorized for this delivery');
         }
       } else if (order.vendorId.toString() !== req.user._id.toString()) {
@@ -443,22 +702,30 @@ exports.updateOrderStatus = async (req, res) => {
 
         const { paymentMethod, paymentAmount } = body;
         if (isAgent) {
-          const cashCollected = validateAgentCashCollection(
+          const agentPaymentMethod = paymentMethod || 'cash';
+          if (agentPaymentMethod === 'online') {
+            const vendor = await User.findById(vendorId).select('upiId').session(session);
+            if (!vendor?.upiId) {
+              throw createHttpError(400, 'The vendor has not configured a UPI ID');
+            }
+          }
+          const amountCollected = validateAgentPaymentCollection(
+            agentPaymentMethod,
             body.cashCollected,
             order.totalAmount,
             relation.balance
           );
-          if (cashCollected > 0) {
+          if (amountCollected > 0) {
             await Payment.create([{
               vendorId,
               customerId: order.customerId,
               orderId: order._id,
               collectedByAgentId: req.user._id,
-              amount: cashCollected,
-              paymentMethod: 'cash',
-              notes: `Collected by delivery agent (Order: ${order._id.toString().slice(-6)})`
+              amount: amountCollected,
+              paymentMethod: agentPaymentMethod,
+              notes: `Collected by delivery agent (${agentPaymentMethod === 'online' ? 'UPI' : 'cash'}, Order: ${order._id.toString().slice(-6)})`
             }], { session });
-            relation.balance -= cashCollected;
+            relation.balance -= amountCollected;
           }
         } else if (paymentMethod === 'cash') {
           const cashAmount = paymentAmount !== undefined ? Number(paymentAmount) : order.totalAmount;
@@ -510,20 +777,7 @@ exports.updateOrderStatus = async (req, res) => {
         }
         order.status = 'cancelled';
       } else {
-        // previousStatus was 'pending': restore reserved stock back to available stock
-        for (const item of order.products) {
-          const requestedQty = getRequestedQuantity(item);
-          if (requestedQty > 0) {
-            const prod = await Product.findById(item.productId).session(session);
-            if (prod) {
-              prod.stock += requestedQty;
-              prod.pendingDeliveryStock = Math.max(0, (prod.pendingDeliveryStock || 0) - requestedQty);
-              prod.isActive = prod.stock > 0;
-              await prod.save({ session });
-            }
-          }
-        }
-        order.status = 'cancelled';
+        await releasePendingOrder(order, relation, session);
       }
 
       if (body.deliveryNotes !== undefined) {

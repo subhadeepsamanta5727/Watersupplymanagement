@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   allocateDeliveredQuantities,
+  getPendingOrderQuantityDeltas,
   validateDeliveredQuantities,
   validateReturnedJarCount
 } = require('../utils/orderQuantities');
@@ -35,4 +36,27 @@ test('allows returns of previously outstanding jars plus newly delivered jars', 
   assert.equal(validateReturnedJarCount(4, 3, 1), 4);
   assert.throws(() => validateReturnedJarCount(4, 3, 0), { statusCode: 400 });
   assert.throws(() => validateReturnedJarCount(1, -1, 2), { statusCode: 409 });
+});
+
+test('calculates pending-order stock deltas for changed, removed, and added products', () => {
+  const deltas = getPendingOrderQuantityDeltas(
+    [
+      { productId: 'jar', quantity: 2 },
+      { productId: 'tap', requestedQuantity: 3, quantity: 3 }
+    ],
+    [
+      { productId: 'jar', quantity: 5 },
+      { productId: 'pack', quantity: 4 }
+    ]
+  );
+
+  assert.deepEqual(deltas, [
+    { productId: 'jar', delta: 3 },
+    { productId: 'tap', delta: -3 },
+    { productId: 'pack', delta: 4 }
+  ]);
+  assert.deepEqual(
+    getPendingOrderQuantityDeltas([{ productId: 'jar', quantity: 5 }], [{ productId: 'jar', quantity: 5 }]),
+    []
+  );
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { API_URL, useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { Droplets, Phone, Key, User, MapPin, ArrowRight } from 'lucide-react';
 import { RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
@@ -14,6 +14,7 @@ const Login = () => {
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState(null);
+  const [demoOtpEnabled, setDemoOtpEnabled] = useState(false);
   const [idToken, setIdToken] = useState('');
   
   // New Customer Profile popup states
@@ -53,19 +54,26 @@ const Login = () => {
     if (phone.length !== 10) return setError('Phone number must be exactly 10 digits');
     setError('');
     setLoading(true);
+    setDemoOtpEnabled(false);
     
-    // DEMO NUMBERS & DEV BYPASS
-    const demoPhones = ['8888888888', '7777777777', '9999999999', '9876543210'];
-    if (demoPhones.includes(phone) || import.meta.env.DEV || import.meta.env.VITE_BYPASS_FIREBASE === 'true') {
-      setTimeout(() => {
-        setOtpSent(true);
-        setMessage('Demo account detected. Enter test OTP: 123456');
-        setLoading(false);
-      }, 400);
-      return;
-    }
-
     try {
+      const modeResponse = await fetch(`${API_URL}/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone })
+      });
+      const mode = await modeResponse.json();
+      if (!modeResponse.ok || !mode.success) {
+        throw new Error(mode.message || 'Could not start phone verification.');
+      }
+
+      setDemoOtpEnabled(mode.demoOtpEnabled === true);
+      if (mode.demoOtpEnabled) {
+        setOtpSent(true);
+        setMessage('Development demo OTP is active because SMTP credentials are not configured. Enter 123456.');
+        return;
+      }
+
       setupRecaptcha();
       const appVerifier = window.recaptchaVerifier;
       const phoneNumberWithCode = '+91' + phone; // Assuming India Country Code
@@ -75,7 +83,7 @@ const Login = () => {
       setOtpSent(true);
       setMessage('OTP sent successfully to your phone.');
     } catch (err) {
-      console.error("Firebase Send OTP Error:", err);
+      console.error('Phone OTP request failed:', err);
       setError(err.message || 'Failed to send OTP');
       if (window.recaptchaVerifier) {
         window.recaptchaVerifier.clear();
@@ -93,11 +101,15 @@ const Login = () => {
     setError('');
     setLoading(true);
 
-    // DEMO NUMBERS & DEV BYPASS
-    const demoPhones = ['8888888888', '7777777777', '9999999999', '9876543210'];
-    if (demoPhones.includes(phone) || import.meta.env.DEV || import.meta.env.VITE_BYPASS_FIREBASE === 'true') {
+    if (demoOtpEnabled) {
+      if (otp !== '123456') {
+        setError('Invalid OTP. Enter the demo code 123456.');
+        setLoading(false);
+        return;
+      }
+
       try {
-        const devToken = `DEV_TOKEN_${phone}`;
+        const devToken = `DEV_TOKEN_${phone}_${otp}`;
         setIdToken(devToken);
 
         const res = await verifyFirebaseToken(devToken);

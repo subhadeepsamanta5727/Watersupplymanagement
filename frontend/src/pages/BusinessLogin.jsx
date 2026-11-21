@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { Droplets, Mail, Lock, Building, Phone, ArrowRight } from 'lucide-react';
+import { Droplets, Mail, Lock, Building, Phone, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 const BusinessLogin = () => {
   const { login, registerVendor } = useAuth();
@@ -12,12 +12,14 @@ const BusinessLogin = () => {
   // Login states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   
   // Vendor Signup states
   const [vendorName, setVendorName] = useState('');
   const [vendorPhone, setVendorPhone] = useState('');
   const [vendorEmail, setVendorEmail] = useState('');
   const [vendorPassword, setVendorPassword] = useState('');
+  const [showVendorPassword, setShowVendorPassword] = useState(false);
 
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -132,13 +134,21 @@ const BusinessLogin = () => {
                     <Lock size={16} />
                   </span>
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-marine-950/50 border border-marine-800 rounded-lg py-2.5 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                    className="w-full bg-marine-950/50 border border-marine-800 rounded-lg py-2.5 pl-10 pr-11 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-cyan-400"
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
                 <div className="text-right mt-2">
                   <Link to="/forgot-password" className="text-xs text-cyan-400 hover:text-cyan-300 font-medium transition-colors">
@@ -228,13 +238,21 @@ const BusinessLogin = () => {
                     <Lock size={16} />
                   </span>
                   <input
-                    type="password"
+                    type={showVendorPassword ? 'text' : 'password'}
                     required
                     value={vendorPassword}
                     onChange={(e) => setVendorPassword(e.target.value)}
                     placeholder="••••••••"
-                    className="w-full bg-marine-950/50 border border-marine-800 rounded-lg py-2.5 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
+                    className="w-full bg-marine-950/50 border border-marine-800 rounded-lg py-2.5 pl-10 pr-11 text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowVendorPassword((visible) => !visible)}
+                    aria-label={showVendorPassword ? 'Hide password' : 'Show password'}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-cyan-400"
+                  >
+                    {showVendorPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
                 </div>
               </div>
               <button

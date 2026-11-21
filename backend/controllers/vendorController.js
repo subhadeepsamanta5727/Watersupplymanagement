@@ -8,9 +8,13 @@ const Product = require('../models/Product');
 const VendorCustomer = require('../models/VendorCustomer');
 const VendorSubscription = require('../models/VendorSubscription');
 const Purchase = require('../models/Purchase');
+const Expense = require('../models/Expense');
 const JarActivity = require('../models/JarActivity');
 const { parsePagination } = require('../utils/pagination');
-const { getIndiaDayBounds } = require('../utils/indiaDate');
+const {
+  getProfitLossDateRange,
+  calculateProfitLossSummary
+} = require('../utils/profitLoss');
 
 // Helper function to check subscription status and limit
 const checkSubscriptionStatus = async (vendorId) => {
@@ -347,7 +351,7 @@ exports.getCustomers = async (req, res) => {
 // @access  Private (Vendor only)
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, phone, email, address, razorpayKeyId, razorpayKeySecret, password, deliverySlots } = req.body;
+    const { name, phone, email, address, upiId, razorpayKeyId, razorpayKeySecret, password, deliverySlots } = req.body;
     const user = await User.findById(req.user._id).select('+razorpayKeySecret');
 
     if (!user) {
@@ -377,6 +381,12 @@ exports.updateProfile = async (req, res) => {
 
     if (name) user.name = name;
     if (address !== undefined) user.address = address;
+    if (upiId !== undefined) {
+      if (typeof upiId !== 'string' || (upiId.trim() && !/^[\w.-]+@[\w.-]+$/.test(upiId.trim()))) {
+        return res.status(400).json({ success: false, message: 'Please enter a valid UPI ID' });
+      }
+      user.upiId = upiId.trim();
+    }
     if (razorpayKeyId !== undefined) user.razorpayKeyId = razorpayKeyId;
     if (razorpayKeySecret) user.razorpayKeySecret = razorpayKeySecret;
     if (deliverySlots !== undefined) user.deliverySlots = deliverySlots;
@@ -396,6 +406,7 @@ exports.updateProfile = async (req, res) => {
         phone: user.phone,
         email: user.email,
         address: user.address,
+        upiId: user.upiId,
         razorpayKeyId: user.razorpayKeyId,
         hasRazorpaySecret: Boolean(user.razorpayKeySecret),
         deliverySlots: user.deliverySlots,
@@ -1110,36 +1121,59 @@ exports.refundSecurityDeposit = async (req, res) => {
 exports.getProfitLossAnalytics = async (req, res) => {
   try {
     const vendorId = req.user._id;
-    const { timeframe } = req.query; // 'today', 'week', 'month', 'year', 'all'
-
-    let startDate = null;
+    const timeframe = req.query.timeframe || 'all';
     const now = new Date();
-    if (timeframe === 'today') {
-      const bounds = getIndiaDayBounds(now);
-      startDate = bounds.start;
-    } else if (timeframe === 'week') {
-      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    } else if (timeframe === 'month') {
-      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    } else if (timeframe === 'year') {
-      startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const supportedTimeframes = ['today', 'week', 'month', 'year', 'chosenYear', 'all'];
+    if (!supportedTimeframes.includes(timeframe)) {
+      return res.status(400).json({ success: false, message: 'Unsupported profit and loss timeframe' });
     }
+    const year = Number(req.query.year);
+    const currentYear = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric'
+    }).format(now));
+    if (timeframe === 'chosenYear' &&
+        (!Number.isInteger(year) || year < 2000 || year > currentYear)) {
+      return res.status(400).json({ success: false, message: 'Choose a valid year from 2000 through the current year' });
+    }
+
+    const dateRange = getProfitLossDateRange(timeframe, year, now);
+    const dateFilter = dateRange
+      ? { $gte: dateRange.start, $lt: dateRange.end }
+      : null;
 
     const orderFilter = {
       vendorId,
       status: 'delivered'
     };
-    if (startDate) {
-      orderFilter.createdAt = { $gte: startDate };
+    if (dateFilter) {
+      orderFilter.$or = [
+        { deliveryDate: dateFilter },
+        { deliveryDate: null, createdAt: dateFilter }
+      ];
     }
+
+    const purchaseFilter = {
+      vendorId,
+      ...(dateFilter ? { purchaseDate: dateFilter } : {})
+    };
+    const expenseFilter = {
+      vendorId,
+      ...(dateFilter ? { expenseDate: dateFilter } : {})
+    };
 
     const [orders, purchases, products] = await Promise.all([
       Order.find(orderFilter).populate('customerId', 'name phone').sort({ createdAt: -1 }),
-      Purchase.find({
-        vendorId,
-        ...(startDate ? { purchaseDate: { $gte: startDate } } : {})
-      }).sort({ purchaseDate: -1 }),
+      Purchase.find(purchaseFilter).sort({ purchaseDate: -1 }),
       Product.find({ vendorId })
+    ]);
+
+    const [expenseTotals, expenses] = await Promise.all([
+      Expense.aggregate([
+        { $match: expenseFilter },
+        { $group: { _id: null, totalAmount: { $sum: '$amount' } } }
+      ]),
+      Expense.find(expenseFilter).sort({ expenseDate: -1, createdAt: -1 }).limit(100).lean()
     ]);
 
     const productCostMap = new Map(products.map((p) => [p._id.toString(), p.purchasePrice || 0]));
@@ -1150,7 +1184,6 @@ exports.getProfitLossAnalytics = async (req, res) => {
 
     const productMap = new Map();
     const customerMap = new Map();
-    const recentOrders = [];
 
     for (const order of orders) {
       let orderRevenue = 0;
@@ -1220,25 +1253,18 @@ exports.getProfitLossAnalytics = async (req, res) => {
       cStat.revenue += orderRevenue;
       cStat.cogs += orderCOGS;
       cStat.profit += (orderRevenue - orderCOGS);
-
-      if (recentOrders.length < 20) {
-        recentOrders.push({
-          orderId: order._id,
-          date: order.createdAt,
-          customerName: custName,
-          customerPhone: custPhone,
-          units: orderUnits,
-          revenue: orderRevenue,
-          cogs: orderCOGS,
-          profit: orderRevenue - orderCOGS,
-          margin: orderRevenue > 0 ? Number(((orderRevenue - orderCOGS) / orderRevenue * 100).toFixed(1)) : 0
-        });
-      }
     }
 
-    const totalGrossProfit = totalRevenue - totalCOGS;
-    const profitMargin = totalRevenue > 0 ? Number(((totalGrossProfit / totalRevenue) * 100).toFixed(1)) : 0;
     const totalPurchasesExpense = purchases.reduce((sum, p) => sum + Number(p.totalAmount || 0), 0);
+    const totalExpenses = Number(expenseTotals[0]?.totalAmount || 0);
+    const summary = calculateProfitLossSummary({
+      totalRevenue,
+      totalCOGS,
+      totalExpenses,
+      totalPurchasesExpense,
+      totalDeliveredOrders: orders.length,
+      totalUnitsSold
+    });
 
     const productBreakdown = Array.from(productMap.values()).map((p) => ({
       ...p,
@@ -1253,19 +1279,12 @@ exports.getProfitLossAnalytics = async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        timeframe: timeframe || 'all',
-        summary: {
-          totalRevenue,
-          totalCOGS,
-          totalGrossProfit,
-          profitMargin,
-          totalDeliveredOrders: orders.length,
-          totalUnitsSold,
-          totalPurchasesExpense
-        },
+        timeframe,
+        ...(timeframe === 'chosenYear' ? { year } : {}),
+        summary,
         productBreakdown,
         customerBreakdown,
-        recentOrders
+        expenses
       }
     });
   } catch (error) {

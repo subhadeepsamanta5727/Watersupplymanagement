@@ -15,7 +15,7 @@ exports.getDashboard = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Delivery agent has no vendor account' });
     }
 
-    const vendor = await User.findById(vendorId).select('name').lean();
+    const vendor = await User.findById(vendorId).select('name upiId').lean();
     if (!vendor) {
       return res.status(404).json({ success: false, message: 'The vendor assigned to this agent could not be found.' });
     }
@@ -63,18 +63,8 @@ exports.getDashboard = async (req, res) => {
 
     const data = orders.map((order) => {
       const row = order.toObject();
-      const isClaimedByAgent = row.deliveryAgentId?._id?.toString() === agentId.toString();
-      const isClaimedByOther = Boolean(row.deliveryAgentId && !isClaimedByAgent);
       if (row.customerId) {
         row.customerId.bottlesOutstanding = jarsByCustomer.get(row.customerId._id.toString()) || 0;
-      }
-      if (!isClaimedByAgent) {
-        delete row.totalAmount;
-        row.products = row.products.map(({ price, ...product }) => product);
-      }
-      if (isClaimedByOther) {
-        row.customerId = { name: row.customerId?.name || 'Customer' };
-        row.deliveryAddress = '';
       }
       return row;
     });
@@ -146,7 +136,7 @@ exports.getDashboard = async (req, res) => {
       success: true,
       ...(pageInfo ? { pagination: pageInfo } : {}),
       data: {
-        vendor: { name: vendor.name },
+        vendor: { name: vendor.name, upiId: vendor.upiId || '' },
         orders: data,
         stats: {
           openDeliveries: pageInfo ? pageInfo.total : orders.length,

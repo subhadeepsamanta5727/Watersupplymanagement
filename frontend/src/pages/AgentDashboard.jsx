@@ -3,6 +3,7 @@ import {
   Banknote, CheckCircle, Clock, HandCoins, LogOut, MapPin, Package,
   PackageCheck, Phone, RefreshCw, Truck, Wallet
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useAuth } from '../context/AuthContext';
 import ThemeToggle from '../components/ThemeToggle';
 
@@ -122,10 +123,15 @@ const AgentDashboard = () => {
       productId: product.productId,
       deliveredQuantity: Number(form.products?.[product.productId] ?? product.requestedQuantity ?? product.quantity)
     }));
-    const cashCollected = Number(form.cashCollected || 0);
+    const amountCollected = Number(form.cashCollected || 0);
+    const paymentMethod = form.paymentMethod || 'cash';
 
-    if (!Number.isFinite(cashCollected) || cashCollected < 0) {
-      setError('Cash collected must be a valid non-negative amount.');
+    if (!Number.isFinite(amountCollected) || amountCollected < 0) {
+      setError('Amount collected must be a valid non-negative amount.');
+      return;
+    }
+    if (paymentMethod === 'online' && !dashboard.vendor?.upiId) {
+      setError('The vendor has not configured a UPI ID.');
       return;
     }
 
@@ -136,8 +142,9 @@ const AgentDashboard = () => {
       const payload = {
         status: 'delivered',
         products,
-        bottlesReturned: Number(form.bottlesReturned || 0),
-        cashCollected
+        bottlesReturned: Number(form.bottlesReturned ?? order.bottlesReturned ?? 0),
+        cashCollected: amountCollected,
+        paymentMethod
       };
       if (form.deliveryNotes && form.deliveryNotes.trim()) {
         payload.deliveryNotes = form.deliveryNotes.trim();
@@ -296,7 +303,7 @@ const AgentDashboard = () => {
                 <div>
                   <h2 className="text-xl font-bold">Open delivery work</h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    Everyone sees the same open orders. Claim one before starting; claimed orders show who is handling them.
+                    All agents can complete open orders for this vendor. Claims show who plans to handle an order but do not restrict delivery.
                   </p>
                 </div>
                 <span className="rounded-full border border-marine-700 bg-sky-600/10 px-3 py-1.5 text-xs text-sky-400">
@@ -330,12 +337,20 @@ const AgentDashboard = () => {
                       const delivered = Number(form.products?.[productId] ?? requested);
                       return { ...product, productId, requested, delivered };
                     });
-                    const deliveredTotal = products.reduce((sum, product) => sum + product.delivered, 0);
                     const deliveryCharge = products.reduce(
                       (sum, product) => sum + Number(product.price || 0) * product.delivered,
                       0
                     );
-                    const maximumJarReturn = jarsOutstanding + deliveredTotal;
+                    const maximumJarReturn = jarsOutstanding + products
+                      .filter((product) => product.isReturnable !== false)
+                      .reduce((sum, product) => sum + product.delivered, 0);
+                    const upiUri = dashboard.vendor?.upiId
+                      ? `upi://pay?${new URLSearchParams({
+                        pa: dashboard.vendor.upiId,
+                        pn: dashboard.vendor.name || 'Water Supplier',
+                        cu: 'INR'
+                      }).toString()}`
+                      : '';
 
                     return (
                       <article
@@ -370,78 +385,65 @@ const AgentDashboard = () => {
                         </div>
 
                         <div className="space-y-4 p-4 md:p-5">
-                          {!isClaimedByOther && (
-                            <div className="grid gap-2 text-sm text-slate-300">
-                              {customer.phone && (
-                                <a href={`tel:${customer.phone}`} className="flex items-center gap-2 text-cyan-300 hover:text-sky-600">
-                                  <Phone size={15} />
-                                  {customer.phone}
-                                </a>
-                              )}
-                              {order.deliveryAddress && (
-                                <a
-                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.deliveryAddress)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-start gap-2 text-cyan-400 hover:underline group"
-                                  title="Open location in Google Maps"
-                                >
-                                  <MapPin size={15} className="mt-0.5 shrink-0 text-cyan-400 group-hover:scale-110 transition-transform" />
-                                  <span className="text-slate-300 group-hover:text-cyan-300">{order.deliveryAddress}</span>
-                                </a>
-                              )}
-                            </div>
-                          )}
+                          <div className="grid gap-2 text-sm text-slate-300">
+                            {customer.phone && (
+                              <a href={`tel:${customer.phone}`} className="flex items-center gap-2 text-cyan-300 hover:text-sky-600">
+                                <Phone size={15} />
+                                {customer.phone}
+                              </a>
+                            )}
+                            {order.deliveryAddress && (
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(order.deliveryAddress)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-start gap-2 text-cyan-400 hover:underline group"
+                                title="Open location in Google Maps"
+                              >
+                                <MapPin size={15} className="mt-0.5 shrink-0 text-cyan-400 group-hover:scale-110 transition-transform" />
+                                <span className="text-slate-300 group-hover:text-cyan-300">{order.deliveryAddress}</span>
+                              </a>
+                            )}
+                          </div>
                           {isClaimedByOther && (
                             <p className="text-sm text-slate-400">
-                              This order is being handled by <span className="font-semibold text-amber-700">{agent?.name || 'another agent'}</span>.
+                              Claimed by <span className="font-semibold text-amber-700">{agent?.name || 'another agent'}</span>; any agent can complete this delivery.
                             </p>
                           )}
 
                           <div className="rounded-xl border border-marine-800 bg-white/70 p-3">
                             <div className="mb-2 flex items-center justify-between">
                               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Items for delivery</p>
-                              {!isClaimedByOther && (
-                                <p className="text-[10px] text-slate-500">Empty jars outstanding: {jarsOutstanding}</p>
-                              )}
+                              <p className="text-[10px] text-slate-500">Empty jars outstanding: {jarsOutstanding}</p>
                             </div>
                             <div className="space-y-2">
                               {products.map((product) => (
                                 <div key={product.productId} className="flex items-center gap-3 text-sm">
                                   <span className="min-w-0 flex-1 truncate text-slate-300">{product.name}</span>
-                                  {isMine ? (
-                                    <>
-                                      <span className="text-xs text-slate-500">{formatMoney(product.price)} each</span>
-                                      <label className="flex items-center gap-1.5 text-xs text-slate-500">
-                                        Qty
-                                        <input
-                                          type="number"
-                                          min="0"
-                                          max={product.requested}
-                                          step="1"
-                                          value={product.delivered}
-                                          onChange={(event) => updateDeliveryForm(order._id, {
-                                            products: {
-                                              ...form.products,
-                                              [product.productId]: event.target.value
-                                            }
-                                          })}
-                                          className="w-16 rounded-lg border border-marine-700 bg-marine-900 px-2 py-1.5 text-center text-white"
-                                        />
-                                      </label>
-                                    </>
-                                  ) : (
-                                    <span className="text-xs font-semibold text-slate-300">
-                                      Qty {product.requested}
-                                    </span>
-                                  )}
+                                  <span className="text-xs text-slate-500">{formatMoney(product.price)} each</span>
+                                  <label className="flex items-center gap-1.5 text-xs text-slate-500">
+                                    Qty
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max={product.requested}
+                                      step="1"
+                                      value={product.delivered}
+                                      onChange={(event) => updateDeliveryForm(order._id, {
+                                        products: {
+                                          ...form.products,
+                                          [product.productId]: event.target.value
+                                        }
+                                      })}
+                                      className="w-16 rounded-lg border border-marine-700 bg-marine-900 px-2 py-1.5 text-center text-white"
+                                    />
+                                  </label>
                                 </div>
                               ))}
                             </div>
                           </div>
 
-                          {isMine ? (
-                            <div className="space-y-3">
+                          <div className="space-y-3">
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <label className="block rounded-xl border border-marine-800 bg-white/70 p-3">
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
@@ -455,7 +457,7 @@ const AgentDashboard = () => {
                                     min="0"
                                     max={maximumJarReturn}
                                     step="1"
-                                    value={form.bottlesReturned ?? 0}
+                                    value={form.bottlesReturned ?? order.bottlesReturned ?? 0}
                                     onChange={(event) => updateDeliveryForm(order._id, {
                                       bottlesReturned: event.target.value
                                     })}
@@ -464,24 +466,58 @@ const AgentDashboard = () => {
                                 </label>
                                 <label className="block rounded-xl border border-marine-800 bg-white/70 p-3">
                                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                                    Cash collected
+                                    Payment method
                                   </span>
-                                  <span className="mt-1 block text-[11px] text-slate-500">
-                                    Delivery charge: {formatMoney(deliveryCharge)}
-                                  </span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max={deliveryCharge}
-                                    step="0.01"
-                                    value={form.cashCollected ?? 0}
+                                  <select
+                                    value={form.paymentMethod || 'cash'}
                                     onChange={(event) => updateDeliveryForm(order._id, {
-                                      cashCollected: event.target.value
+                                      paymentMethod: event.target.value,
+                                      ...(event.target.value === 'due' ? { cashCollected: 0 } : {})
                                     })}
                                     className="mt-2 w-full rounded-lg border border-marine-700 bg-marine-900 px-3 py-2 text-sm text-white"
-                                  />
+                                  >
+                                    <option value="cash">Cash</option>
+                                    <option value="online">Online (UPI)</option>
+                                    <option value="due">Due (Pay Later)</option>
+                                  </select>
                                 </label>
                               </div>
+                              {form.paymentMethod === 'online' && upiUri && (
+                                <div className="flex flex-col items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/5 p-4 text-center">
+                                  <p className="text-xs font-semibold text-slate-300">Customer can scan to pay to {dashboard.vendor?.upiId}</p>
+                                  <div className="rounded-lg bg-white p-3">
+                                    <QRCodeSVG value={upiUri} size={180} level="M" />
+                                  </div>
+                                  <p className="text-[11px] text-slate-400">Customer enters the payment amount in their UPI app.</p>
+                                </div>
+                              )}
+                              {form.paymentMethod === 'online' && !upiUri && (
+                                <p className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300">
+                                  The vendor has not configured a UPI ID. Ask them to add one in Vendor Settings.
+                                </p>
+                              )}
+                              <label className="block rounded-xl border border-marine-800 bg-white/70 p-3">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                                  {form.paymentMethod === 'due' ? 'Amount collected' : 'Amount received'}
+                                </span>
+                                <span className="mt-1 block text-[11px] text-slate-500">
+                                  {form.paymentMethod === 'due'
+                                    ? 'No payment collected. The full delivery value stays due.'
+                                    : `Delivery charge: ${formatMoney(deliveryCharge)}`}
+                                </span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={deliveryCharge}
+                                  step="0.01"
+                                  value={form.cashCollected ?? 0}
+                                  disabled={form.paymentMethod === 'due'}
+                                  onChange={(event) => updateDeliveryForm(order._id, {
+                                    cashCollected: event.target.value
+                                  })}
+                                  className="mt-2 w-full rounded-lg border border-marine-700 bg-marine-900 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                />
+                              </label>
                               <label className="block rounded-xl border border-marine-800 bg-white/70 p-3">
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                   Delivery Remarks / Notes (Optional)
@@ -497,20 +533,31 @@ const AgentDashboard = () => {
                                 />
                               </label>
                               <p className="text-[11px] text-slate-500">
-                                Enter 0 if the customer pays later. Partial cash is recorded immediately; the vendor sees and confirms the handover.
+                                Collected cash or UPI payments are recorded when you submit. Choose Due to leave the full delivery value unpaid.
                               </p>
                               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-marine-800 pt-3">
                                 <p className="text-sm font-bold text-white">
                                   Delivery value <span className="text-cyan-300">{formatMoney(deliveryCharge)}</span>
                                 </p>
                                 <div className="flex gap-2">
-                                  <button
-                                    onClick={() => handleRelease(order)}
-                                    disabled={savingOrderId === order._id}
-                                    className="rounded-lg border border-marine-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-marine-800 disabled:opacity-50"
-                                  >
-                                    Release
-                                  </button>
+                                  {isMine && (
+                                    <button
+                                      onClick={() => handleRelease(order)}
+                                      disabled={savingOrderId === order._id}
+                                      className="rounded-lg border border-marine-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-marine-800 disabled:opacity-50"
+                                    >
+                                      Release
+                                    </button>
+                                  )}
+                                  {!isMine && !isClaimedByOther && (
+                                    <button
+                                      onClick={() => handleClaim(order)}
+                                      disabled={savingOrderId === order._id}
+                                      className="rounded-lg border border-marine-700 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-marine-800 disabled:opacity-50"
+                                    >
+                                      {savingOrderId === order._id ? 'Claiming...' : 'Claim'}
+                                    </button>
+                                  )}
                                   <button
                                     onClick={() => handleCompleteDelivery(order)}
                                     disabled={savingOrderId === order._id}
@@ -521,17 +568,7 @@ const AgentDashboard = () => {
                                   </button>
                                 </div>
                               </div>
-                            </div>
-                          ) : !isClaimedByOther ? (
-                            <button
-                              onClick={() => handleClaim(order)}
-                              disabled={savingOrderId === order._id}
-                              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 py-3 text-sm font-bold text-white hover:bg-sky-500 disabled:opacity-50"
-                            >
-                              <HandCoins size={16} />
-                              {savingOrderId === order._id ? 'Claiming...' : 'Claim this delivery'}
-                            </button>
-                          ) : null}
+                          </div>
                         </div>
                       </article>
                     );

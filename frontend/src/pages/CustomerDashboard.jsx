@@ -121,6 +121,15 @@ const CustomerDashboard = () => {
   const [requestAddress, setRequestAddress] = useState('');
   const [isCustomAddress, setIsCustomAddress] = useState(false);
   const [saveToProfile, setSaveToProfile] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
+  const [editOrderProducts, setEditOrderProducts] = useState([]);
+  const [editReturnedJars, setEditReturnedJars] = useState(0);
+  const [editDeliverySlot, setEditDeliverySlot] = useState('');
+  const [editOrderError, setEditOrderError] = useState('');
+  const [editOrderLoading, setEditOrderLoading] = useState(false);
+  const [pendingOrderActionId, setPendingOrderActionId] = useState('');
+  const [orderActionMessage, setOrderActionMessage] = useState('');
+  const [orderActionError, setOrderActionError] = useState('');
 
   // Online Payment
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -336,6 +345,78 @@ const CustomerDashboard = () => {
     finally { setLoading(false); }
   };
 
+  const handleOpenOrderEdit = (order) => {
+    setEditOrderError('');
+    setEditOrderProducts((order.products || []).map((item) => ({
+      productId: item.productId?._id || item.productId?.toString() || '',
+      quantity: Number(item.requestedQuantity ?? item.quantity)
+    })));
+    setEditReturnedJars(Number(order.bottlesReturned || 0));
+    setEditDeliverySlot(order.deliverySlot || deliverySlotOptions[0] || '');
+    setEditingOrder(order);
+  };
+
+  const handleSaveOrderEdit = async (event) => {
+    event.preventDefault();
+    setEditOrderError('');
+    if (!editOrderProducts.length ||
+        editOrderProducts.some((item) => !item.productId || !Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0)) {
+      setEditOrderError('Choose at least one product and enter a positive whole-number quantity for each.');
+      return;
+    }
+
+    setEditOrderLoading(true);
+    try {
+      const result = await authFetch(`/orders/${editingOrder._id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          products: editOrderProducts.map(({ productId, quantity }) => ({
+            productId,
+            quantity: Number(quantity)
+          })),
+          bottlesReturned: Number(editReturnedJars),
+          deliverySlot: editDeliverySlot
+        })
+      });
+      if (!result.success) {
+        setEditOrderError(result.message || 'Could not update this order.');
+        return;
+      }
+
+      setEditingOrder(null);
+      setOrderActionMessage('Pending order updated.');
+      setOrderActionError('');
+      await fetchVendorDetails(selectedVendorId);
+    } catch {
+      setEditOrderError('Connection failure while updating the order.');
+    } finally {
+      setEditOrderLoading(false);
+    }
+  };
+
+  const handleCancelPendingOrder = async (order) => {
+    if (!window.confirm(`Cancel pending order #${order._id.slice(-6)}? Reserved stock will be released.`)) {
+      return;
+    }
+
+    setPendingOrderActionId(order._id);
+    setOrderActionMessage('');
+    setOrderActionError('');
+    try {
+      const result = await authFetch(`/orders/${order._id}/cancel`, { method: 'PUT' });
+      if (!result.success) {
+        setOrderActionError(result.message || 'Could not cancel this order.');
+        return;
+      }
+      setOrderActionMessage('Pending order cancelled.');
+      await fetchVendorDetails(selectedVendorId);
+    } catch {
+      setOrderActionError('Connection failure while cancelling the order.');
+    } finally {
+      setPendingOrderActionId('');
+    }
+  };
+
   const handlePayBalance = async (e) => {
     e.preventDefault();
     setError(''); setSuccess(''); setLoading(true);
@@ -388,12 +469,21 @@ const CustomerDashboard = () => {
   const thirtyDaysAgo = historyAsOf - (30 * 24 * 60 * 60 * 1000);
   const recentOrders = (vendorDetails?.orders || []).filter((order) => {
     const date = new Date(order.createdAt).getTime();
-    return Number.isFinite(date) && date >= thirtyDaysAgo && date <= historyAsOf;
+    return order.status === 'pending' ||
+      (Number.isFinite(date) && date >= thirtyDaysAgo && date <= historyAsOf);
   });
   const recentPayments = (vendorDetails?.payments || []).filter((payment) => {
     const date = new Date(payment.paymentDate).getTime();
     return Number.isFinite(date) && date >= thirtyDaysAgo && date <= historyAsOf;
   });
+  const editReturnableQuantity = editOrderProducts.reduce((sum, item) => {
+    const product = vendorDetails?.products?.find((row) => row._id === item.productId);
+    return product && product.isReturnable !== false ? sum + Number(item.quantity || 0) : sum;
+  }, 0);
+  const maxEditReturnedJars = Number(vendorDetails?.bottlesOutstanding || 0) + editReturnableQuantity;
+  const deliverySlotOptions = vendorDetails?.vendor?.deliverySlots?.length > 0
+    ? vendorDetails.vendor.deliverySlots
+    : ['Morning (8 AM – 12 PM)', 'Afternoon (12 PM – 4 PM)', 'Evening (4 PM – 8 PM)'];
 
   const navItems = [
     { id: 'shop',     icon: <ShoppingBag size={17} />,  label: 'Order Water',     show: vendors.length > 0 },
@@ -980,8 +1070,20 @@ const CustomerDashboard = () => {
               <section className="space-y-5 animate-tab-transition">
                 <div>
                   <h2 className="text-lg font-bold text-white">Order History</h2>
-                  <p className="text-xs text-slate-500 mt-1">Showing records from the last 30 days.</p>
+                  <p className="text-xs text-slate-500 mt-1">Showing the last 30 days and all pending orders.</p>
                 </div>
+                {orderActionError && (
+                  <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">
+                    <span>{orderActionError}</span>
+                    <button type="button" onClick={() => setOrderActionError('')} className="cursor-pointer" aria-label="Dismiss error"><X size={14} /></button>
+                  </div>
+                )}
+                {orderActionMessage && (
+                  <div role="status" className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-xs text-emerald-300">
+                    <span>{orderActionMessage}</span>
+                    <button type="button" onClick={() => setOrderActionMessage('')} className="cursor-pointer" aria-label="Dismiss message"><X size={14} /></button>
+                  </div>
+                )}
                 {loading ? (
                   <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-24" />)}</div>
                 ) : recentOrders.length === 0 ? (
@@ -1030,11 +1132,34 @@ const CustomerDashboard = () => {
                             {ord.status === 'delivered' && (
                               <span>Del: {ord.bottlesDelivered} | Ret: {ord.bottlesReturned}</span>
                             )}
+                            {ord.status === 'pending' && Number(ord.bottlesReturned) > 0 && (
+                              <span>Planned return: {ord.bottlesReturned} jar(s)</span>
+                            )}
                             {ord.deliverySlot && (
                               <span className="sm:hidden text-[10px]">{ord.deliverySlot}</span>
                             )}
                           </div>
                         </div>
+                        {ord.status === 'pending' && (
+                          <div className="flex sm:flex-col gap-2 sm:justify-center sm:pl-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenOrderEdit(ord)}
+                              disabled={pendingOrderActionId === ord._id}
+                              className="cp-btn-ghost rounded-lg px-3 py-2 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCancelPendingOrder(ord)}
+                              disabled={pendingOrderActionId === ord._id}
+                              className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/20 cursor-pointer disabled:opacity-50"
+                            >
+                              {pendingOrderActionId === ord._id ? 'Cancelling…' : 'Cancel'}
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1224,6 +1349,157 @@ const CustomerDashboard = () => {
             <button type="submit" disabled={loading}
               className="cp-btn-primary flex-[2] py-3 rounded-xl font-bold text-sm cursor-pointer disabled:opacity-50">
               <span>{loading ? 'Submitting…' : 'Confirm Request'}</span>
+            </button>
+          </div>
+        </form>
+      </Drawer>
+
+      {/* ══ EDIT PENDING ORDER DRAWER ═══════════════════════ */}
+      <Drawer
+        open={!!editingOrder}
+        onClose={() => {
+          if (!editOrderLoading) {
+            setEditingOrder(null);
+            setEditOrderError('');
+          }
+        }}
+        title="Edit Pending Order"
+        subtitle="Update products, quantities, jars to return, or delivery slot."
+        icon={<Package size={22} />}
+        accentColor="purple"
+      >
+        <form onSubmit={handleSaveOrderEdit} className="space-y-5">
+          {editOrderError && (
+            <div role="alert" className="flex items-center justify-between gap-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-xs text-rose-300">
+              <span>{editOrderError}</span>
+              <button type="button" onClick={() => setEditOrderError('')} className="cursor-pointer" aria-label="Dismiss error"><X size={14} /></button>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {editOrderProducts.map((item, index) => {
+              const product = vendorDetails?.products?.find((row) => row._id === item.productId);
+              const originallyReserved = (editingOrder?.products || [])
+                .filter((row) => (row.productId?._id || row.productId?.toString()) === item.productId)
+                .reduce((sum, row) => sum + Number(row.requestedQuantity ?? row.quantity), 0);
+              const maxQuantity = product ? Number(product.stock || 0) + originallyReserved : undefined;
+
+              return (
+                <div key={`${item.productId}-${index}`} className="rounded-xl border border-slate-700/60 bg-slate-800/30 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className={labelCls}>Product</label>
+                    <button
+                      type="button"
+                      onClick={() => setEditOrderProducts((current) => current.filter((_, rowIndex) => rowIndex !== index))}
+                      className="text-[11px] text-rose-300 hover:text-rose-200 cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <select
+                    required
+                    value={item.productId}
+                    onChange={(event) => {
+                      const nextProductId = event.target.value;
+                      setEditOrderProducts((current) => current.map((row, rowIndex) =>
+                        rowIndex === index ? { ...row, productId: nextProductId } : row
+                      ));
+                    }}
+                    className={inputCls + ' cursor-pointer'}
+                  >
+                    <option value="">Choose a product</option>
+                    {(vendorDetails?.products || []).map((option) => {
+                      const wasOrdered = (editingOrder?.products || []).some(
+                        (row) => (row.productId?._id || row.productId?.toString()) === option._id
+                      );
+                      return (
+                        <option
+                          key={option._id}
+                          value={option._id}
+                          disabled={!wasOrdered && (option.isActive === false || Number(option.stock) <= 0)}
+                        >
+                          {option.name} — ₹{option.price}{option.isReturnable === false ? ' (Consumable)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  <div>
+                    <label className={labelCls}>Quantity</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={maxQuantity}
+                      required
+                      value={item.quantity}
+                      onChange={(event) => setEditOrderProducts((current) => current.map((row, rowIndex) =>
+                        rowIndex === index ? { ...row, quantity: event.target.value } : row
+                      ))}
+                      className={inputCls}
+                    />
+                    {product && <span className="mt-1 block text-[10px] text-slate-500">Available: {maxQuantity} units</span>}
+                  </div>
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setEditOrderProducts((current) => [...current, { productId: '', quantity: 1 }])}
+              disabled={(vendorDetails?.products || []).every((product) =>
+                editOrderProducts.some((item) => item.productId === product._id)
+              )}
+              className="cp-btn-ghost w-full rounded-xl px-4 py-2.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
+            >
+              + Add another product
+            </button>
+          </div>
+
+          <div>
+            <label className={labelCls}>Empty Jars to Return</label>
+            <input
+              type="number"
+              min="0"
+              max={maxEditReturnedJars}
+              required
+              value={editReturnedJars}
+              onChange={(event) => setEditReturnedJars(event.target.value)}
+              className={inputCls}
+            />
+            <span className="mt-1 block text-[10px] text-slate-500">
+              Up to {maxEditReturnedJars} jars, including jars already outstanding.
+            </span>
+          </div>
+
+          <div>
+            <label className={labelCls}>Preferred Delivery Slot</label>
+            <select
+              required
+              value={editDeliverySlot}
+              onChange={(event) => setEditDeliverySlot(event.target.value)}
+              className={inputCls + ' cursor-pointer'}
+            >
+              {!deliverySlotOptions.includes(editDeliverySlot) && editDeliverySlot && (
+                <option value={editDeliverySlot}>{editDeliverySlot}</option>
+              )}
+              {deliverySlotOptions.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
+            </select>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => { setEditingOrder(null); setEditOrderError(''); }}
+              disabled={editOrderLoading}
+              className="cp-btn-ghost flex-1 rounded-xl px-4 py-3 text-sm font-semibold cursor-pointer disabled:opacity-50"
+            >
+              Close
+            </button>
+            <button
+              type="submit"
+              disabled={editOrderLoading}
+              className="cp-btn-primary flex-1 rounded-xl px-4 py-3 text-sm font-semibold cursor-pointer disabled:opacity-50"
+            >
+              {editOrderLoading ? 'Saving…' : 'Save Changes'}
             </button>
           </div>
         </form>

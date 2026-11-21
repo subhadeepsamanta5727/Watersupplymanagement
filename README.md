@@ -11,11 +11,12 @@ A production-ready, full-stack water delivery and distribution ERP platform buil
 * **Customer Management & Digital Khata:** Track customer addresses, current bottle deposits/outstanding empties, and ledger balance.
 * **Delivery Scheduling & Dispatch:** Order assignment to delivery agents, delivery slot filters (Morning, Afternoon, Evening), and one-click fulfillment.
 * **Cash & Jar Shift Settlements:** Reconcile cash collections and returned empty jars handed over by delivery agents at the end of every shift.
+* **Profit & Loss:** Track sales, cost of goods, supplier purchases, recorded operating expenses, gross profit, and net profit by date range or year.
 * **Subscription Management:** Razorpay integration for distributor tiered subscription plans with customer capacity limits.
 * **Automated PDF Statements:** Instant generation and streaming of customer monthly billing summaries and ledger statements via PDFKit.
 
 ### 2. Delivery Agent Mobile App (`/agent`)
-* **Shared Delivery Board:** Real-time visibility into open vendor deliveries with atomic claim/release locks to prevent concurrent driver pickup races.
+* **Shared Delivery Board:** All agents can complete any open delivery for their vendor. Claims show who plans to handle an order; transactional status updates prevent duplicate completion.
 * **Doorstep Fulfillment:** Delivery confirmation with per-item delivered quantity adjustments, empty jar pickup logging, and cash collection recording.
 * **Navigation & Calling:** Direct Google Maps turn-by-turn navigation deep-links and one-tap customer phone calling.
 * **Field Remarks:** Ability to record delivery notes (e.g., gate codes, security handovers, customer absent notes).
@@ -24,6 +25,8 @@ A production-ready, full-stack water delivery and distribution ERP platform buil
 ### 3. Customer Storefront & Account (`/customer`)
 * **Storefront:** Browse vendor products, pricing, and available delivery windows.
 * **Flexible Ordering:** Request deliveries with custom drop-off addresses, delivery slot preferences, and declaration of empty jars ready for return.
+* **Pending Order Controls:** Edit products, quantities, returned jars, or delivery slot, and cancel a pending order before dispatch.
+* **Phone OTP Login:** Firebase phone verification in production; development uses demo OTP `123456` while SMTP credentials are unconfigured, including customer registration and agent login.
 * **Online Bill Payment:** Integrated Razorpay checkout to clear outstanding balances digitally or pay on delivery.
 * **Order & Statement History:** Complete transparency on delivered jars, returned empties, and payment transaction receipts.
 

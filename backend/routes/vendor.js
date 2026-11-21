@@ -24,6 +24,7 @@ const {
   refundSecurityDeposit
 } = require('../controllers/vendorController');
 const { protect, authorize, checkSubscription } = require('../middleware/auth');
+const { createExpense } = require('../controllers/expenseController');
 
 router.use(protect);
 router.use(authorize('vendor'));
@@ -42,6 +43,7 @@ router.put('/customers/:customerId/custom-prices', checkSubscription, updateCust
 router.post('/customers/:customerId/damage', checkSubscription, reportJarDamage);
 router.post('/customers/:customerId/refund-deposit', checkSubscription, refundSecurityDeposit);
 router.get('/profit-loss', getProfitLossAnalytics);
+router.post('/expenses', checkSubscription, createExpense);
 router.put('/profile', updateProfile);
 router.get('/agents', getAgents);
 router.post('/agents', checkSubscription, createAgent);

@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const sendEmail = require('../utils/sendEmail');
 const SubscriptionPlan = require('../models/SubscriptionPlan');
 const VendorSubscription = require('../models/VendorSubscription');
+const { isDemoOtpEnabled, getDemoOtpPhone } = require('../utils/demoOtp');
 
 // Generate JWT Token
 const generateToken = (id) => {
@@ -19,11 +20,17 @@ const validatePhone = (phone) => {
 
 const getPhoneFromIdToken = async (idToken) => {
   let phone;
-  const demoPhones = ['8888888888', '7777777777', '9999999999', '9876543210'];
-  if (idToken && idToken.startsWith('DEV_TOKEN_')) {
-    const extracted = idToken.slice('DEV_TOKEN_'.length);
-    if (process.env.NODE_ENV === 'development' || demoPhones.includes(extracted)) {
-      phone = extracted;
+  if (typeof idToken === 'string' && idToken.startsWith('DEV_TOKEN_')) {
+    if (!isDemoOtpEnabled()) {
+      const error = new Error('Demo OTP authentication is disabled');
+      error.code = 'DEMO_OTP_DISABLED';
+      throw error;
+    }
+    phone = getDemoOtpPhone(idToken);
+    if (!phone) {
+      const error = new Error('Invalid demo OTP');
+      error.code = 'INVALID_DEMO_OTP';
+      throw error;
     }
   }
 
@@ -167,15 +174,22 @@ exports.login = async (req, res) => {
   }
 };
 
-// @desc    Send OTP to customer phone (Now handled by Firebase Frontend)
+// @desc    Report whether phone login uses demo OTP or Firebase
 // @route   POST /api/v1/auth/send-otp
 // @access  Public
 exports.sendOtp = async (req, res) => {
-  // We keep this endpoint returning success so frontend doesn't break if it accidentally calls it, 
-  // but actual OTP is sent by Firebase on the frontend.
+  const { phone } = req.body || {};
+  if (!validatePhone(phone)) {
+    return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits' });
+  }
+
+  const demoOtpEnabled = isDemoOtpEnabled();
   res.status(200).json({
     success: true,
-    message: 'OTP should be sent via Firebase Client SDK'
+    demoOtpEnabled,
+    message: demoOtpEnabled
+      ? 'Demo OTP is enabled. Enter 123456 to continue.'
+      : 'OTP should be sent via Firebase Client SDK'
   });
 };
 
@@ -241,6 +255,12 @@ exports.verifyOtp = async (req, res) => {
     if (error.code === 'INVALID_PHONE') {
       return res.status(400).json({ success: false, message: error.message });
     }
+    if (error.code === 'INVALID_DEMO_OTP') {
+      return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
+    }
+    if (error.code === 'DEMO_OTP_DISABLED') {
+      return res.status(401).json({ success: false, message: 'Demo OTP authentication is disabled' });
+    }
     console.error("Firebase Auth Error:", error);
     res.status(401).json({ success: false, message: 'Invalid or expired Firebase token' });
   }
@@ -297,6 +317,12 @@ exports.registerCustomer = async (req, res) => {
     }
     if (error.code === 'INVALID_PHONE') {
       return res.status(400).json({ success: false, message: error.message });
+    }
+    if (error.code === 'INVALID_DEMO_OTP') {
+      return res.status(401).json({ success: false, message: 'Invalid or expired OTP' });
+    }
+    if (error.code === 'DEMO_OTP_DISABLED') {
+      return res.status(401).json({ success: false, message: 'Demo OTP authentication is disabled' });
     }
     console.error("Firebase Auth Error:", error);
     res.status(401).json({ success: false, message: 'Invalid or expired Firebase token' });

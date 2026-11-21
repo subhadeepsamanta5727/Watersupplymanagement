@@ -6,7 +6,7 @@ import ThemeToggle from '../components/ThemeToggle';
 import {
   Building, Package, Users, Truck, DollarSign, LogOut, Plus, FileText,
   AlertTriangle, RefreshCw, CheckCircle, Info, Calendar, Download, Menu, X, Settings,
-  IndianRupee, Edit, Activity, MapPin, Eye, Clock, ArrowLeft, History,
+  IndianRupee, Edit, Activity, MapPin, Eye, EyeOff, Clock, ArrowLeft, History,
   Boxes, ShoppingBag, Layers, TrendingUp, TrendingDown, Tag, Percent,
   ChevronRight, Lock, UserCheck, Sparkles
 } from 'lucide-react';
@@ -18,8 +18,34 @@ const getStockStatus = (stock) => {
   return { label: 'In Stock', className: 'bg-emerald-500/10 text-emerald-400' };
 };
 
+const getDateInputValue = (date = new Date()) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getIndiaCurrentYear = () => Number(new Intl.DateTimeFormat('en-IN', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric'
+}).format(new Date()));
+
+const EXPENSE_TYPES = [
+  'Fuel',
+  'Salary',
+  'Rent',
+  'Utilities',
+  'Vehicle Maintenance',
+  'Packaging',
+  'Transport',
+  'Repairs',
+  'Marketing',
+  'Other'
+];
+
 const VendorDashboard = () => {
   const { logout, user, authFetch, refreshUser } = useAuth();
+  const currentIndiaYear = getIndiaCurrentYear();
   const [activeTab, setActiveTab] = useState('overview'); // overview, subscription, products, inventory, purchases, customers, agents, deliveries, payments, settings
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
@@ -83,8 +109,17 @@ const VendorDashboard = () => {
 
   // Analytics states - Profit & Loss
   const [profitLossData, setProfitLossData] = useState(null);
-  const [profitLossTimeframe, setProfitLossTimeframe] = useState('all');
+  const [profitLossTimeframe, setProfitLossTimeframe] = useState('month');
+  const [profitLossYear, setProfitLossYear] = useState(getIndiaCurrentYear());
   const [profitLossLoading, setProfitLossLoading] = useState(false);
+  const [profitLossError, setProfitLossError] = useState('');
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseType, setExpenseType] = useState('Fuel');
+  const [expenseName, setExpenseName] = useState('');
+  const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseDate, setExpenseDate] = useState(getDateInputValue());
+  const [expenseError, setExpenseError] = useState('');
+  const [expenseSaving, setExpenseSaving] = useState(false);
 
   // Form states - Purchase / Stock Inward
   const [purchaseProdId, setPurchaseProdId] = useState('');
@@ -114,7 +149,6 @@ const VendorDashboard = () => {
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState('cash');
   const [payNotes, setPayNotes] = useState('');
-  const [payCashOnly, setPayCashOnly] = useState(false);
 
   // Settings Form States
   const [profileName, setProfileName] = useState('');
@@ -122,8 +156,8 @@ const VendorDashboard = () => {
   const [profileEmail, setProfileEmail] = useState('');
   const [profileAddress, setProfileAddress] = useState('');
   const [profilePassword, setProfilePassword] = useState('');
-  const [vendorKeyId, setVendorKeyId] = useState('');
-  const [vendorKeySecret, setVendorKeySecret] = useState('');
+  const [showProfilePassword, setShowProfilePassword] = useState(false);
+  const [upiId, setUpiId] = useState('');
   const [profileSlots, setProfileSlots] = useState([]);
   const [newSlotText, setNewSlotText] = useState('');
 
@@ -219,15 +253,21 @@ const VendorDashboard = () => {
     fetchData();
   }, []);
 
-  const fetchProfitLoss = async (tf = profitLossTimeframe) => {
+  const fetchProfitLoss = async (tf = profitLossTimeframe, year = profitLossYear) => {
     setProfitLossLoading(true);
+    setProfitLossError('');
     try {
-      const res = await authFetch(`/vendor/profit-loss?timeframe=${tf}`);
+      const params = new URLSearchParams({ timeframe: tf });
+      if (tf === 'chosenYear') params.set('year', String(year));
+      const res = await authFetch(`/vendor/profit-loss?${params.toString()}`);
       if (res?.success) {
         setProfitLossData(res.data);
+      } else {
+        setProfitLossError(res?.message || 'Failed to load profit and loss data.');
       }
     } catch (err) {
       console.error('Failed to load profit loss data:', err);
+      setProfitLossError('Connection failure while loading profit and loss data.');
     } finally {
       setProfitLossLoading(false);
     }
@@ -237,7 +277,51 @@ const VendorDashboard = () => {
     if (activeTab === 'profitLoss') {
       fetchProfitLoss(profitLossTimeframe);
     }
-  }, [activeTab, profitLossTimeframe]);
+  }, [activeTab, profitLossTimeframe, profitLossYear]);
+
+  const handleOpenExpenseModal = () => {
+    setExpenseType('Fuel');
+    setExpenseName('');
+    setExpenseAmount('');
+    setExpenseDate(getDateInputValue());
+    setExpenseError('');
+    setShowExpenseModal(true);
+  };
+
+  const handleRecordExpense = async (event) => {
+    event.preventDefault();
+    setExpenseError('');
+    const amount = Number(expenseAmount);
+    if (!expenseType || !expenseName.trim() || !Number.isFinite(amount) || amount <= 0 || !expenseDate) {
+      setExpenseError('Enter an expense type, name, valid amount, and date.');
+      return;
+    }
+
+    setExpenseSaving(true);
+    try {
+      const result = await authFetch('/vendor/expenses', {
+        method: 'POST',
+        body: JSON.stringify({
+          expenseType,
+          name: expenseName.trim(),
+          amount,
+          expenseDate
+        })
+      });
+      if (!result?.success) {
+        setExpenseError(result?.message || 'Could not record this expense.');
+        return;
+      }
+
+      setShowExpenseModal(false);
+      await fetchProfitLoss(profitLossTimeframe, profitLossYear);
+    } catch (err) {
+      console.error('Failed to record expense:', err);
+      setExpenseError('Connection failure while recording the expense.');
+    } finally {
+      setExpenseSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (user) {
@@ -245,8 +329,7 @@ const VendorDashboard = () => {
       setProfilePhone(user.phone || '');
       setProfileEmail(user.email || '');
       setProfileAddress(user.address || '');
-      setVendorKeyId(user.razorpayKeyId || '');
-      setVendorKeySecret('');
+      setUpiId(user.upiId || '');
       setProfileSlots(user.deliverySlots || []);
     }
   }, [user]);
@@ -264,13 +347,9 @@ const VendorDashboard = () => {
         phone: profilePhone,
         email: profileEmail,
         address: profileAddress,
-        razorpayKeyId: vendorKeyId,
+        upiId,
         deliverySlots: profileSlots
       };
-
-      if (vendorKeySecret) {
-        payload.razorpayKeySecret = vendorKeySecret;
-      }
 
       if (profilePassword) {
         payload.password = profilePassword;
@@ -284,7 +363,6 @@ const VendorDashboard = () => {
       if (res.success) {
         setSuccess('Profile settings updated successfully!');
         setProfilePassword('');
-        setVendorKeySecret('');
         await refreshUser();
       } else {
         setError(res.message || 'Failed to update settings');
@@ -763,17 +841,16 @@ const VendorDashboard = () => {
         body: JSON.stringify({
           customerId: payCustId,
           amount: Number(payAmount),
-          paymentMethod: payCashOnly ? 'cash' : payMethod,
+          paymentMethod: payMethod,
           notes: payNotes
         })
       });
 
       if (res.success) {
-        setSuccess(payCashOnly ? 'Cash payment recorded and customer balance deducted!' : 'Payment recorded and customer balance deducted!');
+        setSuccess('Payment recorded and customer balance deducted!');
         setPayCustId('');
         setPayAmount('');
         setPayNotes('');
-        setPayCashOnly(false);
         setShowPaymentModal(false);
         fetchData();
       } else {
@@ -784,14 +861,13 @@ const VendorDashboard = () => {
     }
   };
 
-  const handleOpenCustomerPayment = (customer) => {
+  const handleOpenPaymentModal = () => {
     setError('');
     setSuccess('');
-    setPayCustId(customer.customerId);
+    setPayCustId('');
     setPayAmount('');
     setPayMethod('cash');
     setPayNotes('');
-    setPayCashOnly(true);
     setShowPaymentModal(true);
   };
 
@@ -2463,24 +2539,27 @@ const VendorDashboard = () => {
                   Profit &amp; Loss Analytics
                 </h1>
                 <p className="text-xs md:text-sm text-slate-400 mt-1">
-                  Financial calculations based on delivered orders, supplier purchase costs, and custom rates.
+                  Sales, product costs, supplier purchases, and operating expenses for the selected period.
                 </p>
               </div>
 
-              {/* Timeframe controls */}
-              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-marine-card border border-marine-800 self-start md:self-center">
+              <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
+                <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-marine-card border border-marine-800">
                 {[
                   { key: 'today', label: 'Today' },
-                  { key: 'week', label: '7 Days' },
-                  { key: 'month', label: '30 Days' },
-                  { key: 'year', label: 'Year' },
-                  { key: 'all', label: 'All Time' }
+                  { key: 'week', label: '1 Week' },
+                  { key: 'month', label: '1 Month' },
+                  { key: 'year', label: '1 Year' },
+                  { key: 'chosenYear', label: 'Choose Year' }
                 ].map((tf) => (
                   <button
                     key={tf.key}
                     onClick={() => {
-                      setProfitLossTimeframe(tf.key);
-                      fetchProfitLoss(tf.key);
+                      if (profitLossTimeframe === tf.key) {
+                        fetchProfitLoss(tf.key, profitLossYear);
+                      } else {
+                        setProfitLossTimeframe(tf.key);
+                      }
                     }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       profitLossTimeframe === tf.key
@@ -2491,6 +2570,19 @@ const VendorDashboard = () => {
                     {tf.label}
                   </button>
                 ))}
+                {profitLossTimeframe === 'chosenYear' && (
+                  <select
+                    value={profitLossYear}
+                    onChange={(event) => setProfitLossYear(Number(event.target.value))}
+                    aria-label="Choose profit and loss year"
+                    className="rounded-lg border border-marine-700 bg-marine-900 px-2.5 py-1.5 text-xs font-semibold text-white focus:outline-none focus:border-sky-500"
+                  >
+                    {Array.from(
+                      { length: currentIndiaYear - 1999 },
+                      (_, index) => currentIndiaYear - index
+                    ).map((year) => <option key={year} value={year}>{year}</option>)}
+                  </select>
+                )}
                 <button
                   onClick={() => fetchProfitLoss(profitLossTimeframe)}
                   disabled={profitLossLoading}
@@ -2499,8 +2591,23 @@ const VendorDashboard = () => {
                 >
                   <RefreshCw size={14} className={profitLossLoading ? 'animate-spin' : ''} />
                 </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenExpenseModal}
+                  className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-500 cursor-pointer"
+                >
+                  <Plus size={16} />
+                  Expense
+                </button>
               </div>
             </div>
+
+            {profitLossError && (
+              <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                {profitLossError}
+              </div>
+            )}
 
             {/* KPI Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2562,10 +2669,66 @@ const VendorDashboard = () => {
                   </div>
                 </div>
                 <div className="mt-3 text-[11px] text-slate-400 flex items-center justify-between border-t border-marine-800/60 pt-2.5">
-                  <span>Revenue − COGS</span>
+                  <span>Gross Profit:</span>
                   <span className={`font-bold ${(profitLossData?.summary?.totalGrossProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {(profitLossData?.summary?.totalGrossProfit || 0) >= 0 ? 'Net Gain' : 'Net Deficit'}
+                    Sales − COGS
                   </span>
+                </div>
+              </div>
+
+              {/* Operating Expenses */}
+              <div className="glass-panel p-5 rounded-2xl border border-marine-800 relative overflow-hidden">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Expenses</span>
+                    <span className="text-2xl font-black text-rose-400 mt-2 block">
+                      Rs. {Number(profitLossData?.summary?.totalExpenses || 0).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+                    <IndianRupee size={20} />
+                  </div>
+                </div>
+                <div className="mt-3 text-[11px] text-slate-400 border-t border-marine-800/60 pt-2.5">
+                  Recorded operating expenses
+                </div>
+              </div>
+
+              {/* Net Profit */}
+              <div className="glass-panel p-5 rounded-2xl border border-marine-800 relative overflow-hidden">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Net Profit</span>
+                    <span className={`text-2xl font-black mt-2 block ${
+                      (profitLossData?.summary?.totalNetProfit || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                    }`}>
+                      Rs. {Number(profitLossData?.summary?.totalNetProfit || 0).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
+                    <TrendingDown size={20} />
+                  </div>
+                </div>
+                <div className="mt-3 text-[11px] text-slate-400 border-t border-marine-800/60 pt-2.5">
+                  Gross profit − expenses
+                </div>
+              </div>
+
+              {/* Total Purchases */}
+              <div className="glass-panel p-5 rounded-2xl border border-marine-800 relative overflow-hidden">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Purchases</span>
+                    <span className="text-2xl font-black text-amber-400 mt-2 block">
+                      Rs. {Number(profitLossData?.summary?.totalPurchasesExpense || 0).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                    <ShoppingBag size={20} />
+                  </div>
+                </div>
+                <div className="mt-3 text-[11px] text-slate-400 border-t border-marine-800/60 pt-2.5">
+                  Supplier stock purchases, shown separately from COGS
                 </div>
               </div>
 
@@ -2573,7 +2736,7 @@ const VendorDashboard = () => {
               <div className="glass-panel p-5 rounded-2xl border border-marine-800 relative overflow-hidden">
                 <div className="flex justify-between items-start">
                   <div>
-                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Profit Margin</span>
+                    <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Gross Margin</span>
                     <span className={`text-2xl font-black mt-2 block ${
                       (profitLossData?.summary?.profitMargin || 0) >= 20 ? 'text-emerald-400' : (profitLossData?.summary?.profitMargin || 0) > 0 ? 'text-amber-400' : 'text-slate-400'
                     }`}>
@@ -2585,9 +2748,57 @@ const VendorDashboard = () => {
                   </div>
                 </div>
                 <div className="mt-3 text-[11px] text-slate-400 flex items-center justify-between border-t border-marine-800/60 pt-2.5">
-                  <span>Total Purchases Logged:</span>
-                  <span className="font-bold text-slate-300">Rs. {Number(profitLossData?.summary?.totalPurchasesExpense || 0).toLocaleString('en-IN')}</span>
+                  <span>Net Margin:</span>
+                  <span className="font-bold text-slate-300">{Number(profitLossData?.summary?.netProfitMargin || 0)}%</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Operating Expense Details */}
+            <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
+              <div className="p-5 border-b border-marine-800 bg-marine-card/50">
+                <h2 className="text-base font-bold text-white">Expense Details</h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Showing the most recent expenses in the selected period.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px] border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
+                      <th className="p-4">Date</th>
+                      <th className="p-4">Type</th>
+                      <th className="p-4">Name / Details</th>
+                      <th className="p-4 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-marine-800/40 text-sm">
+                    {(profitLossData?.expenses || []).map((expense) => (
+                      <tr key={expense._id} className="hover:bg-marine-card/30 transition-colors">
+                        <td className="p-4 text-slate-300 text-xs">
+                          {new Date(expense.expenseDate).toLocaleDateString('en-IN', {
+                            timeZone: 'Asia/Kolkata',
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric'
+                          })}
+                        </td>
+                        <td className="p-4 text-rose-300">{expense.expenseType}</td>
+                        <td className="p-4 font-medium text-white">{expense.name}</td>
+                        <td className="p-4 text-right font-bold text-rose-300">
+                          Rs. {Number(expense.amount).toLocaleString('en-IN')}
+                        </td>
+                      </tr>
+                    ))}
+                    {(!profitLossData?.expenses || profitLossData.expenses.length === 0) && (
+                      <tr>
+                        <td colSpan="4" className="p-8 text-center text-sm text-slate-500">
+                          No expenses recorded in this period.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -2656,7 +2867,7 @@ const VendorDashboard = () => {
                     Customer Profitability Breakdown
                   </h2>
                   <p className="text-xs text-slate-400 mt-0.5">
-                    See exactly how much profit each customer generates (factoring in custom negotiated rates).
+                    Gross profit by customer after product costs, before operating expenses.
                   </p>
                 </div>
               </div>
@@ -2669,7 +2880,7 @@ const VendorDashboard = () => {
                       <th className="p-4">Units Bought</th>
                       <th className="p-4">Total Revenue</th>
                       <th className="p-4">Cost to Supply</th>
-                      <th className="p-4">Net Profit</th>
+                      <th className="p-4">Gross Profit</th>
                       <th className="p-4 text-right">Margin %</th>
                     </tr>
                   </thead>
@@ -2710,49 +2921,6 @@ const VendorDashboard = () => {
               </div>
             </div>
 
-            {/* Recent Deliveries Profit Breakdown */}
-            {profitLossData?.recentOrders?.length > 0 && (
-              <div className="glass-panel rounded-2xl border border-marine-800 overflow-hidden">
-                <div className="p-5 border-b border-marine-800 bg-marine-card/50">
-                  <h2 className="text-base font-bold text-white flex items-center gap-2">
-                    <History className="text-sky-400" size={18} />
-                    Recent Deliveries Margin Summary
-                  </h2>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[700px] border-collapse text-left">
-                    <thead>
-                      <tr className="border-b border-marine-800 bg-marine-card text-xs font-bold uppercase tracking-wider text-slate-400">
-                        <th className="p-4">Date</th>
-                        <th className="p-4">Customer</th>
-                        <th className="p-4">Units</th>
-                        <th className="p-4">Sale Amount</th>
-                        <th className="p-4">Cost (COGS)</th>
-                        <th className="p-4">Profit</th>
-                        <th className="p-4 text-right">Margin</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-marine-800/40 text-sm">
-                      {profitLossData.recentOrders.map((ord) => (
-                        <tr key={ord.orderId} className="hover:bg-marine-card/30 transition-colors">
-                          <td className="p-4 text-slate-300 text-xs font-mono">
-                            {ord.date ? new Date(ord.date).toLocaleDateString('en-IN') : 'N/A'}
-                          </td>
-                          <td className="p-4 font-semibold text-white">{ord.customerName}</td>
-                          <td className="p-4 text-slate-300">{ord.units}</td>
-                          <td className="p-4 font-bold text-white">Rs. {Number(ord.revenue).toLocaleString('en-IN')}</td>
-                          <td className="p-4 text-amber-400 font-medium">Rs. {Number(ord.cogs).toLocaleString('en-IN')}</td>
-                          <td className="p-4 font-bold text-emerald-400">Rs. {Number(ord.profit).toLocaleString('en-IN')}</td>
-                          <td className="p-4 text-right">
-                            <span className="font-semibold text-slate-300">{ord.margin}%</span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </section>
         )}
 
@@ -2764,13 +2932,22 @@ const VendorDashboard = () => {
                 <h1 className="text-xl md:text-2xl font-bold text-white">Customer Tracker</h1>
                 <p className="text-xs md:text-sm text-slate-400 mt-1">Manage linked customers, outstanding bottles, balances, and download statements.</p>
               </div>
-              <button
-                onClick={() => { setError(''); setSuccess(''); setShowCustomerModal(true); }}
-                className="flex items-center justify-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors self-start sm:self-center"
-              >
-                <Plus size={16} />
-                Link Customer
-              </button>
+              <div className="flex flex-wrap gap-2 self-start sm:self-center">
+                <button
+                  onClick={handleOpenPaymentModal}
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors"
+                >
+                  <IndianRupee size={16} />
+                  Pay
+                </button>
+                <button
+                  onClick={() => { setError(''); setSuccess(''); setShowCustomerModal(true); }}
+                  className="flex items-center justify-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors"
+                >
+                  <Plus size={16} />
+                  Link Customer
+                </button>
+              </div>
             </div>
 
             <div className="glass-panel rounded-2xl border border-marine-800">
@@ -2825,19 +3002,7 @@ const VendorDashboard = () => {
                         </td>
                         <td className="p-4 font-bold">
                           {cust.bottlesOutstanding > 0 ? (
-                            <div>
-                              <span className="text-teal-400">{cust.bottlesOutstanding} Jars</span>
-                              <div>
-                                <button
-                                  onClick={() => handleOpenDamageModal(cust)}
-                                  className="inline-flex items-center gap-1 text-[10px] text-rose-400 hover:text-rose-300 mt-1 cursor-pointer font-semibold"
-                                  title="Report broken or lost jar"
-                                >
-                                  <AlertTriangle size={10} />
-                                  Report Damage
-                                </button>
-                              </div>
-                            </div>
+                            <span className="text-teal-400">{cust.bottlesOutstanding} Jars</span>
                           ) : (
                             <span className="text-slate-500">All Returned</span>
                           )}
@@ -2878,13 +3043,6 @@ const VendorDashboard = () => {
                             >
                               <AlertTriangle size={14} />
                               Damage
-                            </button>
-                            <button
-                              onClick={() => handleOpenCustomerPayment(cust)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/10 hover:bg-emerald-600 border border-emerald-500/20 hover:border-emerald-500 text-emerald-400 hover:text-white text-xs font-semibold rounded cursor-pointer transition-all"
-                            >
-                              <IndianRupee size={14} />
-                              Pay
                             </button>
                           </div>
                         </td>
@@ -3391,7 +3549,6 @@ const VendorDashboard = () => {
                   setPayAmount('');
                   setPayMethod('cash');
                   setPayNotes('');
-                  setPayCashOnly(false);
                   setShowPaymentModal(true);
                 }}
                 className="flex items-center justify-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-sm font-semibold cursor-pointer transition-colors self-start sm:self-center"
@@ -3509,43 +3666,40 @@ const VendorDashboard = () => {
 
                   <div>
                     <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Change Password (leave blank to keep current)</label>
-                    <input
-                      type="password"
-                      value={profilePassword}
-                      onChange={(e) => setProfilePassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showProfilePassword ? 'text' : 'password'}
+                        value={profilePassword}
+                        onChange={(e) => setProfilePassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 pr-11 text-sm text-white focus:outline-none focus:border-sky-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowProfilePassword((visible) => !visible)}
+                        aria-label={showProfilePassword ? 'Hide password' : 'Show password'}
+                        className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-sky-400"
+                      >
+                        {showProfilePassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Razorpay section inside settings */}
+                  {/* UPI section inside settings */}
                   <div className="border-t border-marine-850 pt-4 mt-6">
                     <h3 className="text-sm font-bold text-sky-400 uppercase tracking-wider mb-3">Customer Online Payment Setup</h3>
                     <p className="text-xs text-slate-400 mb-4">
-                      Enter your Razorpay Key ID and Secret to allow customers to pay their outstanding balances online directly to your bank account.
+                      Enter your UPI ID to let delivery agents show customers a payment QR code during delivery.
                     </p>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Razorpay Key ID</label>
-                        <input
-                          type="text"
-                          value={vendorKeyId}
-                          onChange={(e) => setVendorKeyId(e.target.value)}
-                          placeholder="rzp_test_..."
-                          className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Razorpay Key Secret</label>
-                        <input
-                          type="password"
-                          value={vendorKeySecret}
-                          onChange={(e) => setVendorKeySecret(e.target.value)}
-                          placeholder={user?.hasRazorpaySecret ? 'Saved — enter a new secret to replace' : 'Key Secret'}
-                          className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
-                        />
-                      </div>
-                    </div>
+                    <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">UPI ID</label>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      value={upiId}
+                      onChange={(e) => setUpiId(e.target.value)}
+                      placeholder="yourname@bank"
+                      className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                    />
                   </div>
 
                   <button
@@ -3641,14 +3795,13 @@ const VendorDashboard = () => {
                     Setup Instructions
                   </h2>
                   <div className="space-y-3 leading-relaxed">
-                    <span className="font-bold text-white block mb-1">Configuring Razorpay for Collections:</span>
-                    <p>1. Log in to your <a href="https://dashboard.razorpay.com" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">Razorpay Dashboard</a>.</p>
-                    <p>2. Go to **Settings** &gt; **API Keys** &gt; **Generate Key**.</p>
-                    <p>3. Copy the **Key ID** and **Key Secret** generated and paste them in the fields on the left.</p>
-                    <p>4. Once saved, customers connected to your distributor account will see a "Pay Online" option on their portal when they have a pending balance due.</p>
+                    <span className="font-bold text-white block mb-1">Configuring UPI for Delivery Collections:</span>
+                    <p>1. Enter your UPI ID in Customer Online Payment Setup and save your settings.</p>
+                    <p>2. When an agent selects Online during delivery, the app shows a QR code for this UPI ID.</p>
+                    <p>3. The customer pays using the QR code. The agent enters the amount received and submits the delivery.</p>
                     <p className="p-3 bg-marine-card/50 border border-marine-850 rounded text-slate-400">
                       <span className="font-bold text-amber-400 block mb-1">Note:</span>
-                      Payments made by customers go directly to your configured Razorpay merchant account. Razorpay settlement cycle will apply.
+                      Agents must confirm the payment in their UPI app before recording the amount collected.
                     </p>
                   </div>
                 </div>
@@ -4191,9 +4344,7 @@ const VendorDashboard = () => {
       {showPaymentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="w-full max-w-md max-h-[calc(100dvh_-_2rem)] overflow-y-auto glass-panel-glow rounded-2xl p-6 border border-sky-500/30">
-            <h2 className="text-xl font-bold text-white mb-4">
-              {payCashOnly ? 'Record Cash Payment' : 'Record Payment'}
-            </h2>
+            <h2 className="text-xl font-bold text-white mb-4">Record Payment</h2>
             {error && (
               <div className="p-3 mb-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
                 {error}
@@ -4202,34 +4353,26 @@ const VendorDashboard = () => {
             <form onSubmit={handleAddPayment} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">
-                  {payCashOnly ? 'Customer' : 'Select Customer'}
+                  Select Customer
                 </label>
-                {payCashOnly ? (
-                  <div className="w-full rounded-lg border border-marine-800 bg-marine-950 p-2.5 text-sm text-white">
-                    {customers.find((customer) => customer.customerId === payCustId)?.name || 'Customer'}
-                  </div>
-                ) : (
-                  <select
-                    required
-                    value={payCustId}
-                    onChange={(e) => setPayCustId(e.target.value)}
-                    className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
-                  >
-                    <option value="">-- Choose Customer --</option>
-                    {customers.map((c) => (
-                      <option key={c.relationId} value={c.customerId}>
-                        {c.name} (Phone: {c.phone} | Bal: Rs. {c.balance})
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <select
+                  required
+                  value={payCustId}
+                  onChange={(e) => setPayCustId(e.target.value)}
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
+                >
+                  <option value="">-- Choose Customer --</option>
+                  {customers.map((c) => (
+                    <option key={c.relationId} value={c.customerId}>
+                      {c.name} ({c.phone}) - Balance: Rs. {c.balance}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className={`grid gap-4 ${payCashOnly ? 'grid-cols-1' : 'grid-cols-2'}`}>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">
-                    {payCashOnly ? 'Cash amount (Rs)' : 'Amount (Rs)'}
-                  </label>
+                  <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Amount (Rs)</label>
                   <input
                     type="number"
                     min="1"
@@ -4240,21 +4383,17 @@ const VendorDashboard = () => {
                     className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
-                {!payCashOnly && <div>
+                <div>
                   <label className="block text-xs font-semibold text-slate-400 uppercase mb-2">Mode</label>
                   <select
                     value={payMethod}
                     onChange={(e) => setPayMethod(e.target.value)}
                     className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-sky-500"
                   >
-                    <option value="cash">Cash Mode</option>
-                    <option value="online">Online Mode (UPI)</option>
-                    <option value="other">Other Mode</option>
+                    <option value="cash">Cash</option>
+                    <option value="online">Online (UPI)</option>
                   </select>
-                </div>}
-                {payCashOnly && (
-                  <p className="text-xs font-semibold text-emerald-400">Payment method: Cash</p>
-                )}
+                </div>
               </div>
 
               <div>
@@ -4274,18 +4413,17 @@ const VendorDashboard = () => {
                   onClick={() => {
                     setError('');
                     setSuccess('');
-                    setPayCashOnly(false);
                     setShowPaymentModal(false);
                   }}
                   className="flex-1 py-2.5 border border-marine-850 rounded-lg text-slate-400 font-semibold text-sm hover:bg-marine-card cursor-pointer"
                 >
-                  Cancel
+                  Close
                 </button>
                 <button
                   type="submit"
                   className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm rounded-lg cursor-pointer"
                 >
-                  {payCashOnly ? 'Record Cash Payment' : 'Record Payment'}
+                  Done
                 </button>
               </div>
             </form>
@@ -4947,6 +5085,113 @@ const VendorDashboard = () => {
                   className="flex-1 py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-sm rounded-lg cursor-pointer transition-colors shadow-md shadow-sky-950/30"
                 >
                   Process Refund
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showExpenseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="expense-modal-title"
+            className="w-full max-w-md max-h-[calc(100dvh_-_2rem)] overflow-y-auto glass-panel-glow rounded-2xl p-6 border border-rose-500/30 animate-scale-up"
+          >
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div>
+                <h2 id="expense-modal-title" className="text-xl font-bold text-white">Record Expense</h2>
+                <p className="text-xs text-slate-400 mt-1">Add an operating expense to this period&apos;s net profit.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExpenseModal(false)}
+                disabled={expenseSaving}
+                aria-label="Close expense form"
+                className="rounded-lg p-1 text-slate-400 hover:bg-marine-800 hover:text-white cursor-pointer disabled:opacity-50"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {expenseError && (
+              <div role="alert" className="p-3 mb-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+                {expenseError}
+              </div>
+            )}
+
+            <form onSubmit={handleRecordExpense} className="space-y-4 mt-4">
+              <div>
+                <label htmlFor="expense-type" className="block text-xs font-semibold text-slate-400 uppercase mb-2">Expense Type</label>
+                <select
+                  id="expense-type"
+                  required
+                  value={expenseType}
+                  onChange={(event) => setExpenseType(event.target.value)}
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-rose-500"
+                >
+                  {EXPENSE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="expense-name" className="block text-xs font-semibold text-slate-400 uppercase mb-2">Name / Details</label>
+                <input
+                  id="expense-name"
+                  type="text"
+                  required
+                  maxLength="120"
+                  value={expenseName}
+                  onChange={(event) => setExpenseName(event.target.value)}
+                  placeholder="e.g. Delivery vehicle fuel"
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="expense-amount" className="block text-xs font-semibold text-slate-400 uppercase mb-2">Amount (Rs.)</label>
+                <input
+                  id="expense-amount"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  required
+                  value={expenseAmount}
+                  onChange={(event) => setExpenseAmount(event.target.value)}
+                  placeholder="0.00"
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="expense-date" className="block text-xs font-semibold text-slate-400 uppercase mb-2">Date</label>
+                <input
+                  id="expense-date"
+                  type="date"
+                  required
+                  value={expenseDate}
+                  onChange={(event) => setExpenseDate(event.target.value)}
+                  className="w-full bg-marine-950 border border-marine-800 rounded-lg p-2.5 text-sm text-white focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExpenseModal(false)}
+                  disabled={expenseSaving}
+                  className="flex-1 py-2.5 border border-marine-850 rounded-lg text-slate-400 font-semibold text-sm hover:bg-marine-card cursor-pointer disabled:opacity-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={expenseSaving}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+                >
+                  {expenseSaving ? 'Saving…' : 'Save Expense'}
                 </button>
               </div>
             </form>

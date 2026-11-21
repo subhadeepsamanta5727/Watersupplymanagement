@@ -1,5 +1,24 @@
 const getRequestedQuantity = (item) => item.requestedQuantity ?? item.quantity;
 
+const getPendingOrderQuantityDeltas = (currentProducts, updatedProducts) => {
+  const currentQuantities = new Map(currentProducts.map((item) => [
+    item.productId.toString(),
+    getRequestedQuantity(item)
+  ]));
+  const updatedQuantities = new Map(updatedProducts.map((item) => [
+    item.productId.toString(),
+    Number(item.quantity)
+  ]));
+  const productIds = new Set([...currentQuantities.keys(), ...updatedQuantities.keys()]);
+
+  return [...productIds]
+    .map((productId) => ({
+      productId,
+      delta: (updatedQuantities.get(productId) || 0) - (currentQuantities.get(productId) || 0)
+    }))
+    .filter((item) => item.delta !== 0);
+};
+
 const allocateDeliveredQuantities = (orderProducts, targetDeliveredTotal) => {
   if (orderProducts.some((item) => item.deliveredQuantity !== undefined)) {
     return orderProducts.map((item) => Number(item.deliveredQuantity ?? 0));
@@ -52,6 +71,7 @@ const validateReturnedJarCount = (returnedCount, outstandingCount, deliveredCoun
 module.exports = {
   allocateDeliveredQuantities,
   getRequestedQuantity,
+  getPendingOrderQuantityDeltas,
   validateDeliveredQuantities,
   validateReturnedJarCount
 };
