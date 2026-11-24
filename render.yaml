@@ -23,6 +23,10 @@ services:
           type: web
           name: water-supply-frontend
           property: url
+      - key: DEMO_OTP_ENABLED
+        value: "true"
+      - key: DEMO_OTP_PHONES
+        value: "9111111111,9222222222,9333333333,9444444444,9555555555,7777777777,6291909839,8111111111,8222222222,8888888888,2222222222,3333333333,9999999999,*"
 
   # Frontend Static Site
   - type: web
