@@ -1,0 +1,172 @@
+================================================================================
+                    WATER SUPPLY MANAGEMENT PLATFORM
+               ALL CUSTOMER, AGENT & VENDOR ACCOUNT DETAILS
+================================================================================
+Generated On: 2026-11-24
+Local Frontend URL: http://localhost:5173
+Local Backend URL:  http://localhost:5000/api/v1
+Live Render Frontend: https://water-supply-frontend.onrender.com
+Live Render Backend:  https://water-supply-api-mlc9.onrender.com/api/v1
+
+================================================================================
+LOGIN INSTRUCTIONS
+================================================================================
+1. For Customers and Delivery Agents:
+   - Go to: http://localhost:5173/login
+   - Enter the 10-digit Mobile Number.
+   - Click "Get Security OTP".
+   - Enter the Demo OTP: 123456
+   - Click "Verify & Login".
+   - Role routing:
+     * Delivery Agents automatically land on: http://localhost:5173/agent
+     * Customers automatically land on:       http://localhost:5173/customer
+
+2. For Vendors and System Admins:
+   - Go to: http://localhost:5173/admin-login
+   - Enter Email / Mobile + Password.
+   - Click "Sign In to Management".
+
+================================================================================
+1. VENDOR & ADMIN ACCOUNTS
+================================================================================
+[VENDOR ACCOUNT]
+  Name:          AquaFlow Water Suppliers
+  Email:         vendor@water.com
+  Mobile:        9876543210
+  Password:      vendor123
+  Portal URL:    http://localhost:5173/admin-login
+  Role:          vendor
+
+[SYSTEM ADMIN ACCOUNT]
+  Name:          System Admin
+  Email:         admin@water.com
+  Mobile:        9999999999
+  Password:      admin123
+  Portal URL:    http://localhost:5173/admin-login
+  Role:          admin
+
+================================================================================
+2. DELIVERY AGENTS (5 ACTIVE AGENTS)
+================================================================================
+Login: Mobile Number + Demo OTP: 123456
+
+AGENT #1:
+  Name:          Rahul Verma (Delivery Agent)
+  Mobile:        8111111111
+  Demo OTP:      123456
+  Status:        ACTIVE
+  Vendor:        AquaFlow Water Suppliers (9876543210)
+  Active Tasks:  1 Pending Order assigned (Customer: Ananya Roy, 2 Jars, Morning Slot)
+
+AGENT #2:
+  Name:          Amit Patel (Delivery Agent)
+  Mobile:        8222222222
+  Demo OTP:      123456
+  Status:        ACTIVE
+  Vendor:        AquaFlow Water Suppliers (9876543210)
+  Active Tasks:  1 Pending Order assigned (Customer: Sneha Mukherjee, 3 Jars, Afternoon Slot)
+
+AGENT #3:
+  Name:          Ramesh Kumar (Delivery Agent)
+  Mobile:        8888888888
+  Demo OTP:      123456
+  Status:        ACTIVE
+  Vendor:        AquaFlow Water Suppliers (9876543210)
+
+AGENT #4:
+  Name:          Mannan
+  Mobile:        2222222222
+  Demo OTP:      123456
+  Status:        ACTIVE
+  Vendor:        AquaFlow Water Suppliers (9876543210)
+
+AGENT #5:
+  Name:          Sam Maity
+  Mobile:        3333333333
+  Demo OTP:      123456
+  Status:        ACTIVE
+  Vendor:        AquaFlow Water Suppliers (9876543210)
+
+================================================================================
+3. CUSTOMERS (7 REGISTERED CUSTOMERS)
+================================================================================
+Login: Mobile Number + Demo OTP: 123456
+
+CUSTOMER #1:
+  Name:               Ananya Roy
+  Mobile:             9111111111
+  Demo OTP:           123456
+  Email:              ananya.demo@water.com
+  Address:            Flat 402, Lakeview Apartments, Sector 5, Salt Lake, Kolkata
+  Empty Jars Held:    2
+  Ledger Balance:     Rs. 90.00 (Due from customer)
+  Security Deposit:   Rs. 150.00
+  Has Returnable Jar: Yes
+
+CUSTOMER #2:
+  Name:               Deepak Sen
+  Mobile:             9222222222
+  Demo OTP:           123456
+  Email:              deepak.demo@water.com
+  Address:            House 14B, Green Valley Residency, New Town, Kolkata
+  Empty Jars Held:    0
+  Ledger Balance:     Rs. 0.00 (Clean account)
+  Security Deposit:   Rs. 0.00
+  Has Returnable Jar: No
+
+CUSTOMER #3:
+  Name:               Sneha Mukherjee
+  Mobile:             9333333333
+  Demo OTP:           123456
+  Email:              sneha.demo@water.com
+  Address:            B-108, Sky Tower Heights, Rajarhat, Kolkata
+  Empty Jars Held:    4
+  Ledger Balance:     Rs. 180.00 (Due from customer)
+  Security Deposit:   Rs. 300.00
+  Has Returnable Jar: Yes
+
+CUSTOMER #4:
+  Name:               Vikram Malhotra
+  Mobile:             9444444444
+  Demo OTP:           123456
+  Email:              vikram.demo@water.com
+  Address:            Shop 12, Commercial Plaza, Park Street, Kolkata
+  Empty Jars Held:    1
+  Ledger Balance:     -Rs. 150.00 (Advance Credit balance)
+  Security Deposit:   Rs. 150.00
+  Has Returnable Jar: Yes
+
+CUSTOMER #5:
+  Name:               Priyanka Das
+  Mobile:             9555555555
+  Demo OTP:           123456
+  Email:              priyanka.demo@water.com
+  Address:            Plot 22, Sunrise Enclave, Action Area 1, New Town, Kolkata
+  Empty Jars Held:    3
+  Ledger Balance:     Rs. 135.00 (Due from customer)
+  Security Deposit:   Rs. 150.00
+  Has Returnable Jar: Yes
+
+CUSTOMER #6:
+  Name:               Pooja Sharma (Customer)
+  Mobile:             7777777777
+  Demo OTP:           123456
+  Address:            Flat 402, Lake View Apartments, Kolkata
+  Empty Jars Held:    0
+  Ledger Balance:     -Rs. 35.00 (Advance Credit balance)
+  Security Deposit:   Rs. 0.00
+  Has Returnable Jar: Yes
+
+CUSTOMER #7:
+  Name:               Victor Mandal
+  Mobile:             6291909839
+  Demo OTP:           123456
+  Address:            Patuli
+  Empty Jars Held:    0
+  Ledger Balance:     Rs. 0.00 (Clean account)
+  Security Deposit:   Rs. 0.00
+  Has Returnable Jar: No
+
+================================================================================
+END OF FILE
+================================================================================
